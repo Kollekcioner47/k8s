@@ -1,0 +1,98 @@
+Посмотрим список подов
+kubectl get pods
+создадим свой под
+kubectl run hello --image=наш образ из прошлого занятия
+далее через kubectl get pods мы можем узнать стату контейнера внутри пода
+статус пода можно посмотреть с помощью команды
+kubectl describe pods hello
+Давайте попробуем отправить команду на наш под
+kubectl exec hello -- date
+войти внутрь пода и остаться там для выполнения команд
+kubectl exec -it hello -- sh
+выйти из шела 
+exit
+посмотреть логи 
+kubectl logs hello
+Перенаправить порты на свой под
+kubectl port-forward hello 8080:80
+Теперь мы создадим под через манифест-файл
+создадим папку проекта
+mkdir k8s
+cd k8s
+создадим файл
+vim pod_mywev_v1.yaml
+apiVersion : v1
+kind: Pod
+metadata:
+	name: my-web
+		- name: container-apache
+		  image: php:8.1-apache
+		  ports:
+			- containerPods: 80
+сохраняем
+запускаем
+kubectl apply -f pod_mywev_v1.yaml
+kubectl get pods
+kubectl describe pods my-web
+удалить под
+kubectl delete -f pod_myweb_v1.yaml
+Поменяем образ в файле
+vim pod_mywev_v1.yaml
+apiVersion : v1
+kind: Pod
+metadata:
+	name: my-web
+		- name: container-apache
+		  image: php:8.1-apache
+		  ports:
+			- containerPods: 80
+сохраняем
+запускаем
+kubectl apply -f pod_mywev_v1.yaml
+удалим под
+kubectl delete -f pod_myweb_v1.yaml
+создадим новую версию конфига
+vim pod_mywev_v2.yaml
+apiVersion : v1
+kind: Pod
+metadata:
+	name: my-web
+	labels:
+		env: prod
+		app: main
+		tier: frontend
+		owner: Engineer
+		- name: container-apache
+		  image: php:8.1-apache
+		  ports:
+			- containerPods: 80
+сохраняем и запускаем
+kubectl apply -f pod_mywev_v2.yaml
+Создадим под из двух контейнеров (плохая практика)
+vim pod_myapp.yaml
+apiVersion : v1
+kind: Pod
+metadata:
+	name: my-web
+	labels:
+		env: prod
+		app: main
+		tier: frontend
+		owner: Engineer
+		- name: container-web
+		  image: php:8.1-apache
+		  ports:
+			- containerPods: 80
+
+		- name: container-api
+		  image: tomcat:8.5.38
+		  ports:
+			- containerPods: 8080
+сохраняем и запускаем
+kubectl apply -f pod_myapp.yaml
+смотрим статус пока не запустится под
+kubectl get pod
+проверяем доступность
+kubectl port-forwarding my-app 80:80
+а потом
+kubectl port-forwarding my-app 8080:80

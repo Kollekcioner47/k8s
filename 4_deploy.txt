@@ -1,0 +1,162 @@
+Проверим список деплойментов
+kubectl get deploy
+создадим деплой
+kubectl create deployment first-deploy --image k8sphp
+снова проверим список деплоев
+kubectl get deploy
+проверим поды
+kubectl get pods
+посмотрим описание деплоя
+kubectl describe deployments first-deploy
+отмасштабируем деплой
+kubectl scale deployment first-deploy --replica 4
+посмотрим реплики
+kubectl get rs
+проверим масштабирование
+kubectl get pods
+копируем имя одного из подов 
+kubectl delete pods "вставляем имя"
+kubectl get pods
+видим что появился новый под, взамен убитого
+настроим автомасштабирование
+kubectl autoscale first-deploy --min=4 --max=6 --cpu-percent=80
+посмотрим horizontal-pod-autoscaling
+kubectl get hpa
+
+посмотрим история деплоя
+kubectl rollout history deployments/first-deploy
+статус деплоя 
+kubectl rollout status deployments/first-deploy
+
+Задача обновления контейнера
+сначала посмотрим какой контейнер мы используем
+kubectl describe deployment first-deploy
+ищем имя контейнера
+
+kubectl set image deployment/first-deploy названиеконтейнера=новыйконтейнер 
+проверим статус 
+kubectl rollout status deployments/first-deploy
+
+откат изменения 
+kubectl rollout undo deployments/first-deploy
+
+Обновим образ в деплое
+kubectl rollout restart deployments/first-deploy
+
+создадим манифест файл
+vim deploy-1-simple.yaml
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+	name: my-web-deploy
+	labels:
+		app: my-k8s-app
+spec:
+	selector: 
+		matchlabels:
+			project: prod
+	template:
+		metadate:
+			labels: prod
+		spec:
+			containers:
+				- name: prod-web
+				  image: k8sphp:version1
+				  ports:
+					- containerPort: 80
+
+пробуем
+kubectl apply -f deploy-1-simple.yaml
+kubectl get deploy
+
+сделаем ещё один вариант
+создадим манифест файл
+vim deploy-2-replicas.yaml
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+	name: my-web-deploy-replicas
+	labels:
+		app: my-k8s-app
+		env: prod
+		owner: Engineer
+spec:
+	replicas: 3
+	selector: 
+		matchlabels:
+			project: repa
+	template:
+		metadate:
+			labels: repa
+		spec:
+			containers:
+				- name: prod-web
+				  image: k8sphp:version2
+				  ports:
+					- containerPort: 80
+
+запускаем
+kubectl apply -f deploy-2-replicas.yaml
+kubectl get deploy
+kubectl get pods
+запустим форвардинг
+kubectl port-forward имяпода 8888:80
+
+
+сделаем ещё один вариант
+создадим манифест файл
+vim deploy-3-autoscaling.yaml
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+	name: my-web-deploy-autoscaling
+	labels:
+		app: my-k8s-app
+		env: prod
+		owner: Engineer
+spec:
+	replicas: 2
+	selector: 
+		matchlabels:
+			project: as
+	template:
+		metadate:
+			labels: as
+		spec:
+			containers:
+				- name: prod-web
+				  image: k8sphp:version2
+				  ports:
+					- containerPort: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoScaler
+metadata:
+	name: my-autoscale
+	spec:
+		scaleTargetRef:
+			apiVersion: apps/v1
+    			kind: Deployment
+    			name: my-web-deploy-autoscaling
+		minReplicas: 3
+		maxReplicas: 5
+		metrics:
+		- type: Resource
+  		  resource:
+			name: cpu
+			targetAverageUtilization: 70
+		- type: Resource
+  		  resource:
+			name: memory
+			targetAverageUtilization: 80
+
+
+запускаем
+kubectl apply -f deploy-3-autoscaling.yaml
+kubectl get deploy
+kubectl get pods
+
+убиваем созданое
+kubectl delete -f файлы
+kubectl delete deployments --all

@@ -1,0 +1,133 @@
+Нужно установить CLI хелмчарта на наш мастер
+заходим на сайт helm.sh и смотрим гайд установки
+
+wget ссылка на таргз с исходниками
+
+распакуем
+tar -xf helm-%
+cd linux-amd64
+sudo mv helm /bin/
+
+проверяем
+helm version
+
+сделаем структуру папок
+mkdir helm
+cd helm
+mkdir templates
+в папку templates добавим два файлвв
+vim deployment.yaml
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+	name: {{ .Release.Name }}-deploy #вместо имени релиза подставиться имя релиза из команды helm install
+	labels:
+		app: {{ .Release.Name }}-app
+spec:
+	replicas: {{ .Values.replicaCount }} 
+	selector: 
+		matchlabels:
+			project: {{ .Release.Name }}
+	template:
+		metadate:
+			labels: prod
+		spec:
+			containers:
+				- name: {{ .Release.Name }}-web
+				  image: {{ .Values.containers.image }}
+				  ports:
+					- containerPort: 80
+
+vim service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+	name: {{ .Release.Name }}-service
+	labels:
+		env: prod
+		owner: IvanKlimarev
+spec:
+	selector:
+		project: {{ .Release.Name }}
+	ports:
+		- name: {{ .Release.Name }}-listener
+			protocol: TCP
+			port: 80 #external
+			targetPord: 80 #internal
+	type: ClusterIP
+
+
+папке helm создадим два файла Chart.yaml и values.yaml
+
+vim Chart.yaml
+apiVersion: v2
+name: App-HelmChart
+description: My helm chart for K8s
+type: application
+version: 0.1.0 #версия Helm
+appVersion: "1.0.0" #версия приложения
+
+keywords:
+	- apache
+	- http
+	- https
+	- Klimarev
+
+maintainers:
+	- name: Ivan Klimarev
+		email: iklimarev@gmail.com
+		url: www.iklimarev.ru
+
+vim values.yaml
+container:
+	image: k8sphp:version1
+
+replicaCount: 2
+
+Пробуем запустить
+helm list #какие релизы были
+helm install app 
+helm list
+kubectl get pods
+должно быть два пода
+kubectl get deploy
+kubectl get svc
+проверяем в браузере
+
+новый деплой
+helm install app1 --set container.image=k8sphp:version1 --set replicaCount=3
+helm list
+kubectl get pods
+kubectl get deploy
+kubectl get svc
+проверяем в браузере
+
+апгрейд
+helm install app1 --set container.image=k8sphp:version1 --set replicaCount=4
+helm list
+kubectl get pods
+kubectl get deploy
+kubectl get svc
+
+из чарта можно сделать архив
+helm pakage /home/engineer/helm
+
+можно сделать установку прямо из архива
+helm install app2 имя_файла
+
+чарты можно искать в репозиториях
+helm search repo #ничего нет, поскольку мы не делелали репозиторий
+helm search hub apache
+например мы можем установить себе репозиторий битнами
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm search repo
+
+helm intall web-site-apache bitnami/apache
+helm list
+kubectl get svc
+
+список задаваемых переменных можно посмотреть в документации
+https://bitnami.com/stack/apache/helm
+там выбрать подробности на гитхабе
+https://github.com/bitnami/charts/tree/main/bitnami/apache/#installing-the-chart
+

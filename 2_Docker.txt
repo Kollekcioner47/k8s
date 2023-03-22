@@ -1,0 +1,53 @@
+Создадим папку проекта
+mkdir project
+cd project
+
+Создадим файл для приложения 
+vim index.php
+
+<?php
+$ip_server = $_SERVER['SERVER_ADDR'];
+echo  "<h1> This WebPage was created by Kubernetes and Docker<h1><br>";
+echo "Server IP Address is $ip_server", "<br><p>";
+echo "Made by <font color=blue>Ivan Ivanov";
+?>
+
+Создаём Dockerfile
+vim Dockerfile
+
+FROM ubuntu
+
+RUN apt-get update && \
+       apt-get install -y --no-install-recommends apt-utils && \
+       apt-get -y install sudo
+
+RUN sudo apt-get install apache2 -y
+RUN sudo apt-get install mysql-server -y
+
+ENV DEBIAN_FRONTEND noninteractive
+ENV DEBCONF_NONINTERACTIVE_SEEN true
+
+RUN echo "tzdata tzdata/Areas select Europe" > /tmp/preseed.txt; \
+    echo "tzdata tzdata/Zones/Europe select Berlin" >> /tmp/preseed.txt; \
+    debconf-set-selections /tmp/preseed.txt && \
+    apt-get update && \
+    apt-get install -y tzdata
+
+RUN sudo apt-get install php libapache2-mod-php -y
+RUN rm -rf /var/www/html/
+COPY . /var/www/html/
+WORKDIR /var/www/html/
+EXPOSE 80
+RUN chmod -R 777 /var/www/html/app/tmp/
+
+CMD systemctl restart apache2
+
+собираем образ
+docker build -t myk8sapp .
+создаём репозиторий на docker.com
+переименуем наш проект 
+docker tag myk8sphp:latest %youreponame%/k8sphp:latest
+логинимся из коноли
+docker login
+отправляем образ в репозиторий
+docker push %youreponame%/k8sphp:latest

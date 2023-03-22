@@ -1,0 +1,232 @@
+Работа с PV в кластере
+Проверим, есть ли у нас какие-то PV в кластере.
+kubectl get pv
+
+Ничего нет. Попробуем создать и применить какой-нибудь PVC и проверим, что произойдет. Для примера создаем pvc.yaml следующего содержания.
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: fileshare
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+
+Просим выделить нам 1 гб пространства с типом доступа ReadWriteMany. Применяем yaml.
+
+# kubectl apply -f pvc.yaml
+
+Ждем немного и проверяем статус pvc.
+
+# kubectl get pvc
+
+Статус pending. Проверяем почему так.
+
+# kubectl get pvc
+
+no persistent volumes available for this claim and no storage class is set
+Все понятно. Запрос находится в ожидании, так как у нас в кластере нет ни одного PV, который бы удовлетворял запросу. Давайте это исправим и добавим одно хранилище для примера на основе внешнего nfs сервера.
+
+NFS хранилище в качестве Persistence Volume
+Для простоты я взял в качестве хранилища PV nfs сервер. Для него не существует встроенного Provisioner, как к примеру, для Ceph.
+
+Создаем yaml файл pv-nfs.yaml с описанием Persistence Volume на основе NFS.
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-nfs-share
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: <<ip>>
+    path: /mnt/nfs
+...
+
+Reclaim Policy
+persistentVolumeReclaimPolicy - что будет происходить с pv после удаления pvc. Могут быть 3 варианта:
+
+Retain - pv удален не будет.
+Recycle - pv будет очищен.
+Delete - pv будет удален.
+Так как у нас нет Provisioner для nfs, удалять автоматически pv не получится. Так что у нас только 2 варианта - либо оставлять данные (retain), либо очищать том (recycle).
+
+kubectl apply -f pv-nfs.yml
+Проверяем список pv и pvc
+
+# kubectl get pv
+# kebectl get pvc
+
+Мы просили в pvc только 1 Гб хранилища, но в pv было только хранилище с 10 Гб и оно было выдано. Как я и говорил раньше. Так что в случае ручного создания PV и PVC нужно самим следить за размером PV.
+
+Подключаем хранилище к поду
+Теперь подключим наш PVC в виде volume к какому-нибудь поду. Опишем его в конфиге pod-with-nfs.yaml
+
+kind: Pod
+apiVersion: v1
+metadata:
+  name: pod-with-nfs
+spec:
+  containers:
+    - name: app
+      image: alpine
+      volumeMounts:
+      - name: data
+        mountPath: /mnt/nfs
+      command: ["/bin/sh"]
+      args: ["-c", "sleep 500000"]
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: fileshare
+Применяем.
+
+# kubectl apply -f pod-with-nfs.yaml
+
+
+Затем проверяйте статус запущенного пода.
+
+# kubectl get pod
+
+если не стартует, значит нет инструментов nfs
+apt install nfs-common portmap
+
+Зайдем в его консоль контейнера и посмотрим, подмонтировалась ли nfs шара.
+
+# kubectl exec -it pod-with-nfs sh
+mount | grep nfs
+
+Как видите, все в порядке. Попробуем теперь что-то записать в шару. Снова заходим на под и создаем текстовый файл.
+
+# kubectl exec -it pod-with-nfs sh
+# echo "test text" >> /mnt/nfs/test.txt
+
+
+Теперь запустим еще один под и подключим ему этот же pvc. Для этого просто немного изменим предыдущий под, обозвав его pod-with-nfs2.
+
+kind: Pod
+apiVersion: v1
+metadata:
+  name: pod-with-nfs2
+spec:
+  containers:
+    - name: app
+      image: alpine
+      volumeMounts:
+      - name: data
+        mountPath: /mnt/nfs
+      command: ["/bin/sh"]
+      args: ["-c", "sleep 500000"]
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: fileshare
+
+Запускаем под и заходим в него.
+
+# kubectl apply -f pod-with-nfs2.yaml
+# kubectl exec -it pod-with-nfs2 sh
+# cat /mnt/nfs/test.txt
+
+
+Все в порядке, файл на месте. С внешними хранилищем в Kubernetes закончили. Расскажу дальше, как можно работать с локальными дисками нод, если вы хотите их так же пустить в работу.
+
+Local Persistent Volume - хранилище Kubernetes на локальных дисках
+Локальные тома, как и nfs, не имеют встроенного провизионера, так что нарезать их можно только вручную, создавая PV.
+
+Создаем SC sc-local.yaml.
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+Создаем вручную PV pv-local-node-1.yaml, который будет располагаться на kub-node-1 в /mnt/local-storage. Эту директорию необходимо вручную создать на сервере.
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-local-node-1
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /mnt/local-storage
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - kub-node-1
+
+Создаем PVC pvc-local.yaml для запроса сторейджа, который передадим поду.
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: local-volume
+spec:
+  storageClassName: "local-storage"
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+И в завершении создадим тестовый POD pod-with-pvc-local.yaml для проверки работы local storage.
+
+kind: Pod
+apiVersion: v1
+metadata:
+  name: pod-with-pvc-local
+spec:
+  containers:
+    - name: app
+      image: alpine
+      volumeMounts:
+      - name: data
+        mountPath: /mnt
+      command: ["/bin/sh"]
+      args: ["-c", "sleep 500000"]
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: local-volume
+
+Применяем все вышеперечисленное в строго определенном порядке:
+
+SC
+PV
+PVC
+POD
+# kubectl apply -f sc-local.yaml
+# kubectl apply -f pv-local-node-1.yaml
+# kubectl apply -f pvc-local.yaml
+# kubectl apply -f pod-with-pvc-local.yaml
+
+Проверим, что Local Persistent Volume правильно работает. Зайдем в под и создадим тестовый файл.
+
+# kubectl exec -it pod-with-pvc-local sh
+# echo "local srorage test" >> /mnt/local.txt
+Теперь идем на сервер kub-node-1 и проверяем файл.
+
+[root@kub-node-1 local-storage]# cat /mnt/local-storage/local.txt 
+
+Все в порядке. Файл создан.

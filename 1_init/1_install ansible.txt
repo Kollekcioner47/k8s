@@ -1,0 +1,21 @@
+Установка на Ubuntu:
+sudo apt-add-repository ppa:ansible/ansible
+sudo apt-get update
+sudo apt-get install ansible
+
+Установка на CentOS:
+sudo yum install epel-release
+sudo yum install ansible
+
+ставим git
+sudo apt-get install git
+
+
+если на виртуалке нет интернета
+sudo nano /etc/network/interfaces
+
+там надо добавить
+auto enp03s
+iface enp0s3 inet dhcp
+
+перезагрузить
