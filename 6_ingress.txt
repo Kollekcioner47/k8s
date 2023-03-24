@@ -40,7 +40,7 @@ kubectl get services
 создадим файл с описанием
 nano ingres-hosts.yaml
 
-apiVersion: networking.k8s.io/vbeta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
 	name: ingress-host
