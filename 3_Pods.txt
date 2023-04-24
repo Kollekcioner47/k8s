@@ -61,13 +61,13 @@ apiVersion : v1
 kind: Pod
 metadata:
 	name: my-web
-spec:
-	containers:
 	labels:
 		env: prod
 		app: main
 		tier: frontend
 		owner: Engineer
+spec:
+	containers:
 		- name: container-apache
 		  image: php:8.1-apache
 		  ports:
@@ -80,13 +80,13 @@ apiVersion : v1
 kind: Pod
 metadata:
 	name: my-web
-spec:
-	containers:
 	labels:
 		env: prod
 		app: main
 		tier: frontend
 		owner: Engineer
+spec:
+	containers:
 		- name: container-web
 		  image: php:8.1-apache
 		  ports:
