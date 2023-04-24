@@ -14,7 +14,7 @@ exit
 посмотреть логи 
 kubectl logs hello
 Перенаправить порты на свой под
-kubectl port-forwarding hello 8080:80
+kubectl port-forward hello 8080:80
 Теперь мы создадим под через манифест-файл
 создадим папку проекта
 mkdir k8s
@@ -101,6 +101,6 @@ kubectl apply -f pod_myapp.yaml
 смотрим статус пока не запустится под
 kubectl get pod
 проверяем доступность
-kubectl port-forwarding my-app 80:80
+kubectl port-forwardi my-app 80:80
 а потом
-kubectl port-forwarding my-app 8080:80
+kubectl port-forward my-app 8080:80
