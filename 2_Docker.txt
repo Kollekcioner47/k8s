@@ -15,32 +15,10 @@ echo "Made by <font color=blue>Ivan Ivanov";
 Создаём Dockerfile
 vim Dockerfile
 
-FROM ubuntu
-
-RUN apt-get update && \
-       apt-get install -y --no-install-recommends apt-utils && \
-       apt-get -y install sudo
-
-RUN sudo apt-get install apache2 -y
-RUN sudo apt-get install mysql-server -y
-
-ENV DEBIAN_FRONTEND noninteractive
-ENV DEBCONF_NONINTERACTIVE_SEEN true
-
-RUN echo "tzdata tzdata/Areas select Europe" > /tmp/preseed.txt; \
-    echo "tzdata tzdata/Zones/Europe select Berlin" >> /tmp/preseed.txt; \
-    debconf-set-selections /tmp/preseed.txt && \
-    apt-get update && \
-    apt-get install -y tzdata
-
-RUN sudo apt-get install php libapache2-mod-php -y
-RUN rm -rf /var/www/html/
+FROM php:8.1-apache
 COPY . /var/www/html/
 WORKDIR /var/www/html/
 EXPOSE 80
-RUN chmod -R 777 /var/www/html/app/tmp/
-
-CMD systemctl restart apache2
 
 собираем образ
 docker build -t myk8sapp .

@@ -14,7 +14,7 @@ exit
 посмотреть логи 
 kubectl logs hello
 Перенаправить порты на свой под
-kubectl port-forward hello 8080:80
+kubectl port-forwarding hello 8080:80
 Теперь мы создадим под через манифест-файл
 создадим папку проекта
 mkdir k8s
@@ -25,10 +25,12 @@ apiVersion : v1
 kind: Pod
 metadata:
 	name: my-web
+spec:
+	containers:
 		- name: container-apache
 		  image: php:8.1-apache
 		  ports:
-			- containerPods: 80
+			- containerPort: 80
 сохраняем
 запускаем
 kubectl apply -f pod_mywev_v1.yaml
@@ -42,10 +44,12 @@ apiVersion : v1
 kind: Pod
 metadata:
 	name: my-web
+spec:
+	containers:
 		- name: container-apache
 		  image: php:8.1-apache
 		  ports:
-			- containerPods: 80
+			- containerPort: 80
 сохраняем
 запускаем
 kubectl apply -f pod_mywev_v1.yaml
@@ -57,6 +61,8 @@ apiVersion : v1
 kind: Pod
 metadata:
 	name: my-web
+spec:
+	containers:
 	labels:
 		env: prod
 		app: main
@@ -65,7 +71,7 @@ metadata:
 		- name: container-apache
 		  image: php:8.1-apache
 		  ports:
-			- containerPods: 80
+			- containerPort: 80
 сохраняем и запускаем
 kubectl apply -f pod_mywev_v2.yaml
 Создадим под из двух контейнеров (плохая практика)
@@ -74,6 +80,8 @@ apiVersion : v1
 kind: Pod
 metadata:
 	name: my-web
+spec:
+	containers:
 	labels:
 		env: prod
 		app: main
@@ -82,12 +90,12 @@ metadata:
 		- name: container-web
 		  image: php:8.1-apache
 		  ports:
-			- containerPods: 80
+			- containerPort: 80
 
 		- name: container-api
 		  image: tomcat:8.5.38
 		  ports:
-			- containerPods: 8080
+			- containerPort: 8080
 сохраняем и запускаем
 kubectl apply -f pod_myapp.yaml
 смотрим статус пока не запустится под
