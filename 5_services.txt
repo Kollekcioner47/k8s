@@ -1,38 +1,38 @@
-создадим деплой 
-kubectl create deployment svс-deploy --image k8sphp
-отмасштабируем его
-kubectl scale deployment svс-deploy --replacas 3
-проверим
+СЃРѕР·РґР°РґРёРј РґРµРїР»РѕР№ 
+kubectl create deployment svСЃ-deploy --image k8sphp
+РѕС‚РјР°СЃС€С‚Р°Р±РёСЂСѓРµРј РµРіРѕ
+kubectl scale deployment svСЃ-deploy --replacas 3
+РїСЂРѕРІРµСЂРёРј
 kubectl get podes
-создадим сервис
-kubectl expose deployment svс-deploy --type=ClusterIP --port 80
+СЃРѕР·РґР°РґРёРј СЃРµСЂРІРёСЃ
+kubectl expose deployment svСЃ-deploy --type=ClusterIP --port 80
 kubectl get services
-проверим работу балансировки
-curl <здесь ip>
-curl <здесь ip>
-curl <здесь ip>
-должны быть разные ip в выдаче, что показывает что мы каждый раз попадаем на разные поды
-убъём сервис
-kubectl delete service svс-deploy
-другой вариант сервиса
-kubectl expose deployment svс-deploy --type=NodePort --port 80
+РїСЂРѕРІРµСЂРёРј СЂР°Р±РѕС‚Сѓ Р±Р°Р»Р°РЅСЃРёСЂРѕРІРєРё
+curl <Р·РґРµСЃСЊ ip>
+curl <Р·РґРµСЃСЊ ip>
+curl <Р·РґРµСЃСЊ ip>
+РґРѕР»Р¶РЅС‹ Р±С‹С‚СЊ СЂР°Р·РЅС‹Рµ ip РІ РІС‹РґР°С‡Рµ, С‡С‚Рѕ РїРѕРєР°Р·С‹РІР°РµС‚ С‡С‚Рѕ РјС‹ РєР°Р¶РґС‹Р№ СЂР°Р· РїРѕРїР°РґР°РµРј РЅР° СЂР°Р·РЅС‹Рµ РїРѕРґС‹
+СѓР±СЉС‘Рј СЃРµСЂРІРёСЃ
+kubectl delete service svСЃ-deploy
+РґСЂСѓРіРѕР№ РІР°СЂРёР°РЅС‚ СЃРµСЂРІРёСЃР°
+kubectl expose deployment svСЃ-deploy --type=NodePort --port 80
 kubectl get service
-смотрим полученый порт
-открываем браузер и пишем
-<IPХоста>:<Port>
-kubectl delete svc svс-deploy
+СЃРјРѕС‚СЂРёРј РїРѕР»СѓС‡РµРЅС‹Р№ РїРѕСЂС‚
+РѕС‚РєСЂС‹РІР°РµРј Р±СЂР°СѓР·РµСЂ Рё РїРёС€РµРј
+<IPРҐРѕСЃС‚Р°>:<Port>
+kubectl delete svc svСЃ-deploy
 
-посмотреть ip хоста можно с помощью
+РїРѕСЃРјРѕС‚СЂРµС‚СЊ ip С…РѕСЃС‚Р° РјРѕР¶РЅРѕ СЃ РїРѕРјРѕС‰СЊСЋ
 kubectl describe nodes
 
-ТОЛЬКО ДЛЯ ОБЛАЧНЫХ СЕРВИСОВ
-kubectl expose deployment svс-deploy --type=LoadBalancer --port 80
+РўРћР›Р¬РљРћ Р”Р›РЇ РћР‘Р›РђР§РќР«РҐ РЎР•Р Р’РРЎРћР’
+kubectl expose deployment svСЃ-deploy --type=LoadBalancer --port 80
 kubectl get service
-вы увидите ip балансировщика
-kubectl delete svc svс-deploy
+РІС‹ СѓРІРёРґРёС‚Рµ ip Р±Р°Р»Р°РЅСЃРёСЂРѕРІС‰РёРєР°
+kubectl delete svc svСЃ-deploy
 
 
-создадим манифест
+СЃРѕР·РґР°РґРёРј РјР°РЅРёС„РµСЃС‚
 mkdir my_services
 cd my_services
 vim service-1-clusterip-single.yaml
@@ -46,17 +46,17 @@ spec:
 	replicas: 3
 	selector:
 		matchLabels:
-			app: SuperApp
+			app: superapp
 	template
 		metadata:
 			labels:
-				app: SuperApp #Сервис смотрит на под с этим лейблом
+				app: superapp #РЎРµСЂРІРёСЃ СЃРјРѕС‚СЂРёС‚ РЅР° РїРѕРґ СЃ СЌС‚РёРј Р»РµР№Р±Р»РѕРј
 		spec: 
 			containers:
-				- name: SuperApp-web
-					image: k8sphp:latest
-					ports:
-						- containerPort: 80
+				- name: superapp-web
+				  image: k8sphp:latest
+				  ports:
+					- containerPort: 80
 ---
 apiVersion: v1
 kind: Service
@@ -66,24 +66,24 @@ metadata:
 		env: prod
 		owner: IvanKlimarev
 spec:
-	selector: #тип сервиса
-		app: SuperApp # Выбор пода по лейблу
+	selector: #С‚РёРї СЃРµСЂРІРёСЃР°
+		app: superapp # Р’С‹Р±РѕСЂ РїРѕРґР° РїРѕ Р»РµР№Р±Р»Сѓ
 	ports:
 		- name: app-listener
-			protocol: TCP
-			port: 80 # port on Host
-			targetPort: 80 # port on POD
+		  protocol: TCP
+		  port: 80 # port on Host
+		  targetPort: 80 # port on POD
 	type: ClusterIP
 
-проверяем
+РїСЂРѕРІРµСЂСЏРµРј
 kubectl apply -f service-1-clusterip-single.yaml
 kubectl get deploy
 kubectl get svc
-смотрим IP и проверяем через браузер
+СЃРјРѕС‚СЂРёРј IP Рё РїСЂРѕРІРµСЂСЏРµРј С‡РµСЂРµР· Р±СЂР°СѓР·РµСЂ
 
 
 
-мультиконейнерный сервис
+РјСѓР»СЊС‚РёРєРѕРЅРµР№РЅРµСЂРЅС‹Р№ СЃРµСЂРІРёСЃ
 
 vim service-2-clusterip-multi.yaml
 apiVersion: apps/v1
@@ -100,7 +100,7 @@ spec:
 	template
 		metadata:
 			labels:
-				app: MegaApp #Сервис смотрит на под с этим лейблом
+				app: MegaApp #РЎРµСЂРІРёСЃ СЃРјРѕС‚СЂРёС‚ РЅР° РїРѕРґ СЃ СЌС‚РёРј Р»РµР№Р±Р»РѕРј
 		spec: 
 			containers:
 				- name: my-web
@@ -122,22 +122,22 @@ metadata:
 		env: prod
 		owner: IvanKlimarev
 spec:
-	selector: #тип сервиса
-		app: MegaApp # Выбор пода по лейблу
+	selector: #С‚РёРї СЃРµСЂРІРёСЃР°
+		app: MegaApp # Р’С‹Р±РѕСЂ РїРѕРґР° РїРѕ Р»РµР№Р±Р»Сѓ
 	ports:
 		- name: my-web-app-listner
-			protocol: TCP
-			port: 80 # port on LoadBalancer
-			targetPort: 80 # port on POD
+		  protocol: TCP
+		  port: 80 # port on LoadBalancer
+		  targetPort: 80 # port on POD
 		- name: not-my-web-app-listner
-			protocol: TCP
-			port: 8888 # port on LoadBalancer
-			targetPort: 8080 # port on POD
+		  protocol: TCP
+		  port: 8888 # port on LoadBalancer
+		  targetPort: 8080 # port on POD
 
 	type: ClusterIP
 
-проверяем
+РїСЂРѕРІРµСЂСЏРµРј
 kubectl apply -f service-2-clusterip-multi.yaml
 kubectl get deploy
 kubectl get svc
-смотрим IP и проверяем через браузер
+СЃРјРѕС‚СЂРёРј IP Рё РїСЂРѕРІРµСЂСЏРµРј С‡РµСЂРµР· Р±СЂР°СѓР·РµСЂ
