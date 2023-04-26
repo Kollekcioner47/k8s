@@ -104,3 +104,4 @@ kubectl get pod
 kubectl port-forwardi my-app 80:80
 а потом
 kubectl port-forward my-app 8080:80
+test
