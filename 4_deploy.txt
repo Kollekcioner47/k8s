@@ -1,49 +1,49 @@
-Проверим список деплойментов
+РџСЂРѕРІРµСЂРёРј СЃРїРёСЃРѕРє РґРµРїР»РѕР№РјРµРЅС‚РѕРІ
 kubectl get deploy
-создадим деплой
+СЃРѕР·РґР°РґРёРј РґРµРїР»РѕР№
 kubectl create deployment first-deploy --image k8sphp
-снова проверим список деплоев
+СЃРЅРѕРІР° РїСЂРѕРІРµСЂРёРј СЃРїРёСЃРѕРє РґРµРїР»РѕРµРІ
 kubectl get deploy
-проверим поды
+РїСЂРѕРІРµСЂРёРј РїРѕРґС‹
 kubectl get pods
-посмотрим описание деплоя
+РїРѕСЃРјРѕС‚СЂРёРј РѕРїРёСЃР°РЅРёРµ РґРµРїР»РѕСЏ
 kubectl describe deployments first-deploy
-отмасштабируем деплой
+РѕС‚РјР°СЃС€С‚Р°Р±РёСЂСѓРµРј РґРµРїР»РѕР№
 kubectl scale deployment first-deploy --replica 4
-посмотрим реплики
+РїРѕСЃРјРѕС‚СЂРёРј СЂРµРїР»РёРєРё
 kubectl get rs
-проверим масштабирование
+РїСЂРѕРІРµСЂРёРј РјР°СЃС€С‚Р°Р±РёСЂРѕРІР°РЅРёРµ
 kubectl get pods
-копируем имя одного из подов 
-kubectl delete pods "вставляем имя"
+РєРѕРїРёСЂСѓРµРј РёРјСЏ РѕРґРЅРѕРіРѕ РёР· РїРѕРґРѕРІ 
+kubectl delete pods "РІСЃС‚Р°РІР»СЏРµРј РёРјСЏ"
 kubectl get pods
-видим что появился новый под, взамен убитого
-настроим автомасштабирование
-kubectl autoscale first-deploy --min=4 --max=6 --cpu-percent=80
-посмотрим horizontal-pod-autoscaling
+РІРёРґРёРј С‡С‚Рѕ РїРѕСЏРІРёР»СЃСЏ РЅРѕРІС‹Р№ РїРѕРґ, РІР·Р°РјРµРЅ СѓР±РёС‚РѕРіРѕ
+РЅР°СЃС‚СЂРѕРёРј Р°РІС‚РѕРјР°СЃС€С‚Р°Р±РёСЂРѕРІР°РЅРёРµ
+kubectl autoscale deploy first-deploy --min=4 --max=6 --cpu-percent=80
+РїРѕСЃРјРѕС‚СЂРёРј horizontal-pod-autoscaling
 kubectl get hpa
 
-посмотрим история деплоя
+РїРѕСЃРјРѕС‚СЂРёРј РёСЃС‚РѕСЂРёСЏ РґРµРїР»РѕСЏ
 kubectl rollout history deployments/first-deploy
-статус деплоя 
+СЃС‚Р°С‚СѓСЃ РґРµРїР»РѕСЏ 
 kubectl rollout status deployments/first-deploy
 
-Задача обновления контейнера
-сначала посмотрим какой контейнер мы используем
+Р—Р°РґР°С‡Р° РѕР±РЅРѕРІР»РµРЅРёСЏ РєРѕРЅС‚РµР№РЅРµСЂР°
+СЃРЅР°С‡Р°Р»Р° РїРѕСЃРјРѕС‚СЂРёРј РєР°РєРѕР№ РєРѕРЅС‚РµР№РЅРµСЂ РјС‹ РёСЃРїРѕР»СЊР·СѓРµРј
 kubectl describe deployment first-deploy
-ищем имя контейнера
+РёС‰РµРј РёРјСЏ РєРѕРЅС‚РµР№РЅРµСЂР°
 
-kubectl set image deployment/first-deploy названиеконтейнера=новыйконтейнер 
-проверим статус 
+kubectl set image deployment/first-deploy РЅР°Р·РІР°РЅРёРµРєРѕРЅС‚РµР№РЅРµСЂР°=РЅРѕРІС‹Р№РєРѕРЅС‚РµР№РЅРµСЂ 
+РїСЂРѕРІРµСЂРёРј СЃС‚Р°С‚СѓСЃ 
 kubectl rollout status deployments/first-deploy
 
-откат изменения 
+РѕС‚РєР°С‚ РёР·РјРµРЅРµРЅРёСЏ 
 kubectl rollout undo deployments/first-deploy
 
-Обновим образ в деплое
+РћР±РЅРѕРІРёРј РѕР±СЂР°Р· РІ РґРµРїР»РѕРµ
 kubectl rollout restart deployments/first-deploy
 
-создадим манифест файл
+СЃРѕР·РґР°РґРёРј РјР°РЅРёС„РµСЃС‚ С„Р°Р№Р»
 vim deploy-1-simple.yaml
 apiVersion : apps/v1
 kind: Deployment
@@ -54,10 +54,11 @@ metadata:
 spec:
 	selector: 
 		matchlabels:
-			project: prod
+			app: prod
 	template:
-		metadate:
-			labels: prod
+		metadata:
+			labels: 
+				app: prod
 		spec:
 			containers:
 				- name: prod-web
@@ -65,12 +66,12 @@ spec:
 				  ports:
 					- containerPort: 80
 
-пробуем
+РїСЂРѕР±СѓРµРј
 kubectl apply -f deploy-1-simple.yaml
 kubectl get deploy
 
-сделаем ещё один вариант
-создадим манифест файл
+СЃРґРµР»Р°РµРј РµС‰С‘ РѕРґРёРЅ РІР°СЂРёР°РЅС‚
+СЃРѕР·РґР°РґРёРј РјР°РЅРёС„РµСЃС‚ С„Р°Р№Р»
 vim deploy-2-replicas.yaml
 apiVersion : apps/v1
 kind: Deployment
@@ -84,7 +85,7 @@ spec:
 	replicas: 3
 	selector: 
 		matchlabels:
-			project: repa
+			app: repa
 	template:
 		metadate:
 			labels: repa
@@ -95,16 +96,16 @@ spec:
 				  ports:
 					- containerPort: 80
 
-запускаем
+Р·Р°РїСѓСЃРєР°РµРј
 kubectl apply -f deploy-2-replicas.yaml
 kubectl get deploy
 kubectl get pods
-запустим форвардинг
-kubectl port-forward имяпода 8888:80
+Р·Р°РїСѓСЃС‚РёРј С„РѕСЂРІР°СЂРґРёРЅРі
+kubectl port-forward РёРјСЏРїРѕРґР° 8888:80
 
 
-сделаем ещё один вариант
-создадим манифест файл
+СЃРґРµР»Р°РµРј РµС‰С‘ РѕРґРёРЅ РІР°СЂРёР°РЅС‚
+СЃРѕР·РґР°РґРёРј РјР°РЅРёС„РµСЃС‚ С„Р°Р№Р»
 vim deploy-3-autoscaling.yaml
 apiVersion : apps/v1
 kind: Deployment
@@ -118,7 +119,7 @@ spec:
 	replicas: 2
 	selector: 
 		matchlabels:
-			project: as
+			app: as
 	template:
 		metadate:
 			labels: as
@@ -137,26 +138,30 @@ metadata:
 	spec:
 		scaleTargetRef:
 			apiVersion: apps/v1
-    			kind: Deployment
-    			name: my-web-deploy-autoscaling
+    		kind: Deployment
+    		name: my-web-deploy-autoscaling
 		minReplicas: 3
 		maxReplicas: 5
 		metrics:
 		- type: Resource
   		  resource:
-			name: cpu
-			targetAverageUtilization: 70
+				name: cpu
+				target:
+					type: Utiliztion
+          	averageUtilization: 70
 		- type: Resource
   		  resource:
-			name: memory
-			targetAverageUtilization: 80
+				name: memory
+				target:
+					type: Utiliztion
+          	averageUtilization: 70			
 
 
-запускаем
+Р·Р°РїСѓСЃРєР°РµРј
 kubectl apply -f deploy-3-autoscaling.yaml
 kubectl get deploy
 kubectl get pods
 
-убиваем созданое
-kubectl delete -f файлы
+СѓР±РёРІР°РµРј СЃРѕР·РґР°РЅРѕРµ
+kubectl delete -f С„Р°Р№Р»С‹
 kubectl delete deployments --all
