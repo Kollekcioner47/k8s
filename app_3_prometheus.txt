@@ -1,0 +1,412 @@
+Сервер Prometheus устанавливается достаточно просто:
+#Добавляем репозиторий
+helm repo add stable https://kubernetes-charts.storage.googleapis.com
+#Обновляем
+helm repo update
+#Создаем namespace
+kubectl create namespace monitoring
+#Устанавливаем helm c именем my-prometheus
+helm install my-prometheus stable/prometheus -n monitoring
+
+В результате выполнения мы получаем:
+The Prometheus PushGateway can be accessed via port 9091 on the following DNS name from within your cluster:
+my-prometheus-pushgateway.monitoring.svc.cluster.local
+
+Get the PushGateway URL by running these commands in the same shell:
+  export POD_NAME=$(kubectl get pods --namespace monitoring -l "app=prometheus,component=pushgateway" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace monitoring port-forward $POD_NAME 9091
+
+For more information on running Prometheus, visit:
+https://prometheus.io/
+
+Проверяем, все ли поды запущены:
+kubectl get pods -n monitoring
+
+При выводе Helm chart предлагает выполнить port-forward для pushgateway, чтобы получить доступ к интерфейсу Prometheus. Меняем component на server и выполняем:
+#получаем название контейнера и сохраняем его в переменную POD_NAME
+export POD_NAME=$(kubectl get pods --namespace monitoring -l "app=prometheus,component=server" -o jsonpath="{.items[0].metadata.name}")
+#пробрасываем порт
+kubectl --namespace monitoring port-forward $POD_NAME 9090
+
+Теперь открываем http://127.0.0.1:9090/ в браузере — и видим интерфейс Prometheus
+Итак, у нас есть сервер Prometheus, развернутый внутри кластера Kubernetes. Теперь давайте развернем Redis, который впоследствии и поставим на мониторинг в Prometheus. Для этого также используем Helm:
+#добавляем репозиторий
+helm repo add bitnami https://charts.bitnami.com/bitnami
+#Обновляем
+helm repo update
+#Создаем namespace
+kubectl create namespace redis
+#Устанавливаем helm c именем redis
+helm install redis bitnami/redis -n redis --set cluster.enabled=true --set cluster.slaveCount=2 --set master.persistence.enabled=false --set slave.persistence.enabled=false
+
+Параметры cluster.enabled и cluster.slaveCount определяют, что Redis будет развернут в режиме «кластер», и в этом кластере два пода будут работать как slave. В параметрах указываем: не использовать persistent volume для master и slave (persistence.enabled=false). Сейчас это нужно, чтобы продемонстрировать работу Redis. В продакшене будет необходимо сделать настройку persistent volume.
+Проверяем, что все поды redis запущены:
+kubectl get pod -n redis
+
+Exporters
+
+Prometheus получает метрики из указанных в его конфигурации источников в блоке targets. Некоторые сервисы самостоятельно предоставляют метрики в формате Prometheus, и для их сбора не нужно ничего дополнительно настраивать. Достаточно подключить Prometheus в конфигурации, как это сделано ниже:
+
+ scrape_configs:
+     — job_name: prometheus
+       static_configs:
+         — targets:
+           — localhost:9090
+
+Указываем серверу Prometheus забирать метрики из конечной точки: localhost:9090/metrics.
+
+Redis и exporter
+
+
+Давайте подключим exporter для нашего Redis-кластера. Сначала потребуется создать файл values.yaml со следующим содержанием:
+
+cluster:
+ enabled: true
+ slaveCount: 2
+ 
+##
+## Redis Master parameters
+##
+master:
+ persistence:
+   enabled: false
+ extraFlags:
+   — "--maxmemory 256mb"
+ 
+slave:
+ persistence:
+   enabled: false
+ extraFlags:
+   — "--maxmemory 256mb"
+ 
+ 
+## Prometheus Exporter / Metrics
+##
+metrics:
+ enabled: true
+ 
+ image:
+   registry: docker.io
+   repository: bitnami/redis-exporter
+   tag: 1.4.0-debian-10-r3
+   pullPolicy: IfNotPresent
+ 
+ ## Metrics exporter pod Annotation and Labels
+ podAnnotations:
+   prometheus.io/scrape: "true"
+   prometheus.io/port: "9121"
+
+Здесь параметры, которые использовались в командной строке для настройки Redis в режиме cluster, перенесены в yaml-файл. Для сбора метрик добавлено подключение redis-exporter.
+
+Обновляем Redis с новыми параметрами:
+
+helm upgrade redis -f redis/values.yaml bitnami/redis -n redis
+
+Проверяем, что поды Redis запущены:
+
+kubectl get pods -n redis
+
+Теперь к каждому pod «привязан» дополнительный контейнер redis-exporter, который предоставляет доступ к метрикам Redis.
+
+Давайте убедимся, что мы получаем данные о состоянии Redis. Для этого можно открыть интерфейс и ввести PromQL-запрос redis_up:
+Alertmanager и Alerting rules
+
+За отправку предупреждений в Prometheus отвечает компонент AlertManager. В качестве каналов оповещения могут выступать: email, slack и другие клиенты. Для настройки оповещения необходимо обновить конфигурацию файла alertmanager.yml.
+
+Создадим файл prometheus/values.yaml со следующим содержимым:
+
+## alertmanager ConfigMap entries
+##
+alertmanagerFiles:
+ alertmanager.yml:
+   global:
+     slack_api_url: <secret>
+ 
+   route:
+     receiver: slack-alert
+     group_by:
+       — redis_group
+     repeat_interval: 30m
+     routes:
+       — match:
+           severity: critical
+         receiver: slack-alert
+ 
+   receivers:
+     — name: slack-alert
+       slack_configs:
+         — channel: 'general'
+           send_resolved: true
+           color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+           title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing
+             | len }}{{ end }}] {{ .CommonAnnotations.summary }}'
+           text: |-
+             {{ range .Alerts }}
+               *Alert:* {{ .Annotations.summary }} — *{{ .Labels.severity | toUpper }}* on {{ .Labels.instance }}
+               *Description:* {{ .Annotations.description }}
+               *Details:*
+               {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}`
+               {{ end }}
+             {{ end }}
+
+Slack_api_url должен содержать ключ, который можно получить на сайте Slack.
+
+Обновляем my-prometheus:
+
+helm upgrade my-prometheus -f prometheus/values.yaml stable/prometheus -n monitoring
+
+Для того, чтобы получить доступ к интерфейсу Alertmanager, выполним следующее:
+
+export POD_NAME=$(kubectl get pods --namespace monitoring -l "app=prometheus,component=alertmanager" -o jsonpath="{.items[0].metadata.name}")
+kubectl --namespace monitoring port-forward $POD_NAME 9093
+
+Теперь в интерфейсе Alertmanager можно убедиться, что появилась конфигурация для отправки оповещения в канал Slack http://127.0.0.1:9093/#/status:
+Далее нужно создать правила, по которым нотификация будет отправляться в Slack-канал.
+
+Правила представляют собой значения метрик или их совокупности, объединенные логическим условием. При выходе значения метрики за допустимые пределы Prometheus обращается к Alertmanager, чтобы отправить нотификации по определенным в нем каналам. Например, если метрика redis_up вернет значение 0, сработает уведомление о недоступности того или иного узла кластера.
+
+Добавляем в файл prometheus/values.yaml стандартные правила для сигнализации о проблемах в Redis:
+
+serverFiles:
+ 
+ ## Alerts configuration
+ ## Ref: https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+ alerting_rules.yml:
+   groups:
+     — name: redis_group
+       rules:
+         — alert: redis_is_running
+           expr: redis_up == 0
+           for: 30s
+           labels:
+             severity: critical
+           annotations:
+             summary: "Critical: Redis is down on the host {{ $labels.instance }}."
+             description: "Redis has been down for more than 30 seconds"
+         — alert: redis_memory_usage
+           expr:  redis_memory_used_bytes / redis_memory_max_bytes * 100 > 40
+           for: 5m
+           labels:
+             severity: warning
+           annotations:
+             description: "Warning: Redis high memory(>40%) usage on the host {{ $labels.instance }} for more than 5 minutes"
+             summary: "Redis memory usage {{ humanize $value}}% of the host memory"
+         — alert: redis_master
+           expr: redis_connected_clients{instance!~"server1.mydomain.com.+"} > 50
+           for: 5m
+           labels:
+             severity: warning
+           annotations:
+             description: "Warning: Redis has many connections on the host {{ $labels.instance }} for more than 5 minutes"
+             summary: "Redis number of connections {{ $value }}"
+         — alert: redis_rejected_connections
+           expr: increase(redis_rejected_connections_total[1m]) > 0
+           for: 30s
+           labels:
+             severity: critical
+           annotations:
+             description: "Critical: Redis rejected connections on the host {{ $labels.instance }}"
+             summary: "Redis rejected connections are {{ $value }}"
+         — alert: redis_evicted_keys
+           expr: increase(redis_evicted_keys_total[1m]) > 0
+           for: 30s
+           labels:
+             severity: critical
+           annotations:
+             description: "Critical: Redis evicted keys on the host {{ $labels.instance }}"
+             summary: "Redis evicted keys are {{ $value }}"
+
+Обновляем my-prometheus:
+
+helm upgrade my-prometheus -f prometheus/values.yaml stable/prometheus -n monitoring
+
+Для проверки работы нотификации в Slack, изменим правило алерта redis_memory_usage:
+
+ expr:  redis_memory_used_bytes / redis_memory_max_bytes * 100 < 40
+
+Снова обновляем my-prometheus:
+
+helm upgrade my-prometheus -f prometheus/values.yaml stable/prometheus -n monitoring
+
+Переходим на страницу http://127.0.0.1:9090/alerts:
+
+Redis_memory_usage перешел в статус «pending». Значение выражения для всех трех подов чуть больше 0.72. Далее уведомление проходит в Slack:
+Теперь добавляем нотификацию по email. При этом конфигурация alermanager.yml изменится так:
+
+alertmanagerFiles:
+ alertmanager.yml:
+   global:
+     slack_api_url: <secret>
+ 
+   route:
+     receiver: slack-alert
+     group_by:
+       — redis_group
+     repeat_interval: 30m
+     routes:
+       — match:
+           severity: critical
+         receiver: slack-alert
+         continue: true
+       — match:
+           severity: critical
+         receiver: email-alert
+ 
+   receivers:
+     — name: slack-alert
+       slack_configs:
+         — channel: 'general'
+           send_resolved: true
+           color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+           title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing
+             | len }}{{ end }}] {{ .CommonAnnotations.summary }}'
+           text: |-
+             {{ range .Alerts }}
+               *Alert:* {{ .Annotations.summary }} — *{{ .Labels.severity | toUpper }}* on {{ .Labels.instance }}
+               *Description:* {{ .Annotations.description }}
+               *Details:*
+               {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}`
+               {{ end }}
+             {{ end }}
+     — name: email-alert
+       email_configs:
+       — to: alert@agima.ru
+         send_resolved: true
+         require_tls: false
+         from: alert@agima.ru
+         smarthost: smtp.agima.ru:465
+         auth_username: "alert@agima.ru"
+         auth_identity: "alert@agima.ru"
+         auth_password: <secret>
+
+
+В блок routes добавляем еще один путь для нотификации: receiver: email-alert. Ниже описываем параметры для email. В этом случае при том или ином событии мы получим уведомления одновременно в Slack и на email:
+
+
+Blackbox exporter
+
+Теперь рассмотрим, как в Prometheus добавляются targets на примере контейнера blackbox exporter, который позволяет организовать мониторинг внешних сервисов по протоколам HTTP(s), DNS, TCP, ICMP.
+
+Для установки blackbox exporter используем Helm:
+
+helm install blackbox-exporter stable/prometheus-blackbox-exporter --namespace monitoring 
+
+Проверяем, что поды blackbox exporter запущены:
+
+kubectl get pods -n monitoring | grep blackbox
+
+Добавляем в файл prometheus/values.yaml следующую конфигурацию:
+
+extraScrapeConfigs: |
+ — job_name: 'prometheus-blackbox-exporter'
+   metrics_path: /probe
+   params:
+     module: [http_2xx]
+   static_configs:
+     — targets:
+       — https://example.org
+ 
+   relabel_configs:
+     — source_labels: [__address__]
+       target_label: __param_target
+     — source_labels: [__param_target]
+       target_label: instance
+     — target_label: __address__
+       replacement: blackbox-exporter-prometheus-blackbox-exporter.monitoring.svc.cluster.local:9115
+
+Указываем, откуда собирать метрики:
+
+blackbox-exporter-prometheus-blackbox-exporter.monitoring.svc.cluster.local:9115/probe. В качестве targets указываем URL сервиса для мониторинга: https://example.org. Для проверки используется модуль http_2xx, который по умолчанию устанавливается в blackbox exporter. Конфигурация проверки:
+
+secretConfig: false
+config:
+ modules:
+   http_2xx:
+     prober: http
+     timeout: 5s
+     http:
+       valid_http_versions: ["HTTP/1.1", "HTTP/2"]
+       no_follow_redirects: false
+       preferred_ip_protocol: "ip4"
+
+Обновляем конфигурацию my-prometheus:
+
+helm upgrade my-prometheus -f prometheus/values.yaml stable/prometheus -n monitoring
+
+В интерфейсе Prometheus http://127.0.0.1:9090/targets проверяем, что у нас появилась конечная точка для сбора метрик
+
+
+Обновляем конфигурацию blackbox-exporter/values.yaml:
+
+
+helm upgrade blackbox-exporter -f blackbox-exporter/values.yaml stable/prometheus-blackbox-exporter --namespace monitoring
+
+Изменяем в файле prometheus/values.yaml модуль http_2xx на http_2xx_check:
+
+extraScrapeConfigs: |
+ — job_name: 'prometheus-blackbox-exporter'
+   metrics_path: /probe
+   params:
+     module: [http_2xx]
+
+Описания проверок, которые можно делать с blackbox exporter, приведены в документации.
+
+Теперь добавим правила для сигнализации в Prometheus в файл prometheus/values.yaml:
+
+  — name: http_probe
+       rules:
+         — alert: example.org_down
+           expr: probe_success{instance="https://example.org",job="prometheus-blackbox-exporter"} == 0
+           for: 5s
+           labels:
+             severity: critical
+           annotations:
+             description: '{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minutes.'
+             summary: 'Instance {{ $labels.instance }} down'
+
+
+И обновляем конфигурацию my-prometheus:
+
+helm upgrade my-prometheus -f prometheus/values.yaml stable/prometheus -n monitoring
+
+Для проверки можно изменить в blackbox-exporter/values.yaml значение текста для модуля http_2xx_check, который ищется в теле ответа, и обновить blackbox exporter. Должна сработать нотификация в Slack и Email.
+
+Grafana
+
+Настала очередь визуализации. Для отображения графиков будем использовать
+Grafana.
+
+Устанавливаем его уже привычным для нас образом с помощью пакетного менеджера Helm:
+
+helm install my-grafana bitnami/grafana -n monitoring --set=persistence.enabled=false
+
+В параметрах указываем «не использовать persistent volume» (--set=persistence.enabled=false), чтобы только продемонстрировать работу grafana. В продакшн- среде нужно настроить хранилище, так как поды по своей природе эфемерны, и есть риск потерять настройки Grafana.
+
+Должен получиться вот такой вывод:
+
+2. Get the admin credentials:
+
+    echo "User: admin"
+    echo "Password: $(kubectl get secret my-grafana-admin --namespace monitoring -o jsonpath="{.data.GF_SECURITY_ADMIN_PASSWORD}" | base64 --decode)"
+
+Проверяем, что под Grafana запущен:
+
+$kubectl get pods -n monitoring | grep grafana
+NAME                                               READY   STATUS    RESTARTS   AGE
+my-grafana-67c9776d7-nwbqj                         1/1     Running   0          55s
+
+
+Перед тем как открыть интерфейс Grafana, нужно получить пароль от пользователя admin, сделать это можно так:
+
+$echo "Password: $(kubectl get secret my-grafana-admin --namespace monitoring -o jsonpath="{.data.GF_SECURITY_ADMIN_PASSWORD}" | base64 --decode)"
+
+Затем «пробрасываем» порт Grafana:
+
+kubectl port-forward -n monitoring svc/my-grafana 8080:3000
+
+Открываем http://127.0.0.1:9090/ в браузере и авторизуемся
+
+Для того чтобы Grafana могла получать значения метрик, хранящихся в базе данных Prometheus, необходимо подключить его. Переходим на http://127.0.0.1:8080/datasources и добавляем data source. В качестве TSDB выбираем Prometheus, который доступен в нашем кластере по адресу my-prometheus-server.monitoring.svc.cluster.local.
+
+После добавления data source нужно добавить dashboard в Grafana — чтобы состояния показателей Redis-кластера отображались на графиках. Переходим на http://127.0.0.1:8080/dashboard/import и добавляем id = 763.
+

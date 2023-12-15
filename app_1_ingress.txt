@@ -1,0 +1,108 @@
+Ставим нужный контроллер из списка в файле
+Kubernetes Ingress Controllers.xlsx
+
+проверяем список сервисов
+kubectl get svc
+
+проверяем скрытые сервисы
+kubectl get svc -A
+
+создадим деплоймент для балансировки
+kubectl create deployment main --image k8sphp
+kubectl create deployment web1 --image k8sphp
+kubectl create deployment web2 --image k8sphp
+kubectl create deployment web3 --image k8sphp
+kubectl create deployment tomcat --image tomcat:latest
+
+проверяем
+kubectl get pods
+
+отмасштабируем
+kubectl scale deployment main --replicas 2
+kubectl scale deployment web1 --replicas 2
+kubectl scale deployment web2 --replicas 2
+kubectl scale deployment web3 --replicas 2
+
+проверяем
+kubectl get pods
+kubectl get deploy
+kubectl get services
+
+сделаем сервисы
+kubectl expose deploy main --port=80
+kubectl expose deploy web1 --port=80
+kubectl expose deploy web2 --port=80
+kubectl expose deploy web3 --port=80
+kubectl expose deploy tomcat --port=8080
+
+kubectl get services
+
+создадим файл с описанием
+nano ingres-hosts.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+	name: ingress-host
+
+spec:
+	rules:
+	- host: %hostname%
+		http:
+			path:
+				- backend:
+						serviceName: main
+						servicePort: 80
+	- host:
+		http:
+			path:
+				- backend:
+						serviceName: web1
+						servicePort: 80
+	- host:
+		http:
+			path:
+				- backend:
+						serviceName: web2
+						servicePort: 80
+	- host:
+		http:
+			path:
+				- backend:
+						serviceName: web3
+						servicePort: 80
+	- host:
+		http:
+			path:
+				- backend:
+						serviceName: tomcat
+						servicePort: 8080
+
+сохраняем и запускаем
+
+kubectl apply -f ingress-host.yaml
+kubectl get ingress
+kubectl describe ingress
+
+создадим файл с описанием
+nano ingress-path.yaml
+
+apiVersion: networking.k8s.io/vbeta1
+kind: Ingress
+metadata:
+	name: ingress-host
+
+spec:
+	rules:
+	- host: www.super-engineer.ru
+		http:
+			path: "/path" - какой путь в адресе
+				- backend:
+						serviceName: web1
+						servicePort: 80
+
+сохраняем и запускаем
+
+kubectl apply -f ingress-path.yaml
+kubectl get ingress
+kubectl describe ingress
