@@ -39,41 +39,39 @@ vim service-1-clusterip-single.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-	name: my-web-deploy
-	labels: 
-		app: my-k8s-deploy
+  name: my-web-deploy
 spec:
-	replicas: 3
-	selector:
-		matchLabels:
-			app: superapp
-	template
-		metadata:
-			labels:
-				app: superapp #Сервис смотрит на под с этим лейблом
-		spec: 
-			containers:
-				- name: superapp-web
-				  image: k8sphp:latest
-				  ports:
-					- containerPort: 80
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-k8s-deploy
+  template:
+    metadata:
+      labels:
+        app: my-k8s-deploy
+    spec:
+      containers:
+      - name: super-app-web
+        image: kollekcioner47/myk8sapp:1.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
-metadata: 
-	name: my-single-pod-service
-	labels: 
-		env: prod
-		owner: IvanKlimarev
+metadata:
+  name: my-single-pod-service
 spec:
-	selector: #тип сервиса
-		app: superapp # Выбор пода по лейблу
-	ports:
-		- name: app-listener
-		  protocol: TCP
-		  port: 80 # port on Host
-		  targetPort: 80 # port on POD
-	type: ClusterIP
+  selector:
+    app: my-k8s-deploy
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30000
+  type: NodePort
 
 проверяем
 kubectl apply -f service-1-clusterip-single.yaml
@@ -89,52 +87,48 @@ vim service-2-clusterip-multi.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-	name: my-web-deploy-multi-pods
-	labels: 
-		app: my-k8s-deploy
+  name: my-web-deploy-multi
 spec:
-	replicas: 3
-	selector:
-		matchLabels:
-			app: MegaApp
-	template
-		metadata:
-			labels:
-				app: MegaApp #Сервис смотрит на под с этим лейблом
-		spec: 
-			containers:
-				- name: my-web
-					image: k8sphp:latest
-					ports:
-						- containerPort: 80
-
-				- name: not-my-web
-					image: tomcat
-					ports:
-						- containerPort: 8080
-
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-k8s-deploy2
+  template:
+    metadata:
+      labels:
+        app: my-k8s-deploy2
+    spec:
+      containers:
+      - name: mega-app-web
+        image: kollekcioner47/myk8sapp:1.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 80
+      
+      - name: mega-app-not-web
+        image: tomcat:11.0
+        resources:
+          limits:
+            memory: "1024Mi"
+            cpu: "1000m"
+        ports:
+        - containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
-metadata: 
-	name: my-multi-pods-service
-	labels: 
-		env: prod
-		owner: IvanKlimarev
+metadata:
+  name: my-multi-pod-service
 spec:
-	selector: #тип сервиса
-		app: MegaApp # Выбор пода по лейблу
-	ports:
-		- name: my-web-app-listner
-		  protocol: TCP
-		  port: 80 # port on LoadBalancer
-		  targetPort: 80 # port on POD
-		- name: not-my-web-app-listner
-		  protocol: TCP
-		  port: 8888 # port on LoadBalancer
-		  targetPort: 8080 # port on POD
-
-	type: ClusterIP
+  selector:
+    app: my-k8s-deploy2
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30001
+  type: NodePort
 
 проверяем
 kubectl apply -f service-2-clusterip-multi.yaml
