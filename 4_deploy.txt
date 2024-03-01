@@ -45,26 +45,29 @@ kubectl rollout restart deployments/first-deploy
 
 создадим манифест файл
 vim deploy-1-simple.yaml
-apiVersion : apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-	name: my-web-deploy
-	labels:
-		app: my-k8s-app
+  name: my-web-deploy
 spec:
-	selector: 
-		matchlabels:
-			app: prod
-	template:
-		metadata:
-			labels: 
-				app: prod
-		spec:
-			containers:
-				- name: prod-web
-				  image: k8sphp:version1
-				  ports:
-					- containerPort: 80
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: prod-web
+        image: kollekcioner47/myk8sapp:1.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 80
+
 
 пробуем
 kubectl apply -f deploy-1-simple.yaml
@@ -73,28 +76,30 @@ kubectl get deploy
 сделаем ещё один вариант
 создадим манифест файл
 vim deploy-2-replicas.yaml
-apiVersion : apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-	name: my-web-deploy-replicas
-	labels:
-		app: my-k8s-app
-		env: prod
-		owner: Engineer
+  name: my-web-deploy-replicas
 spec:
-	replicas: 3
-	selector: 
-		matchlabels:
-			app: repa
-	template:
-		metadate:
-			labels: repa
-		spec:
-			containers:
-				- name: prod-web
-				  image: k8sphp:version2
-				  ports:
-					- containerPort: 80
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: prod-web
+        image: kollekcioner47/myk8sapp:1.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 80
+
 
 запускаем
 kubectl apply -f deploy-2-replicas.yaml
@@ -107,54 +112,55 @@ kubectl port-forward имяпода 8888:80
 сделаем ещё один вариант
 создадим манифест файл
 vim deploy-3-autoscaling.yaml
-apiVersion : apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-	name: my-web-deploy-autoscaling
-	labels:
-		app: my-k8s-app
-		env: prod
-		owner: Engineer
+  name: my-web-deploy-autoscale
 spec:
-	replicas: 2
-	selector: 
-		matchlabels:
-			app: as
-	template:
-		metadate:
-			labels: as
-		spec:
-			containers:
-				- name: prod-web
-				  image: k8sphp:version2
-				  ports:
-					- containerPort: 80
-
+  replicas: 2
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: prod-web
+        image: kollekcioner47/myk8sapp:1.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 80
 ---
 apiVersion: autoscaling/v2
-kind: HorizontalPodAutoScaler
+kind: HorizontalPodAutoscaler
 metadata:
-	name: my-autoscale
-	spec:
-		scaleTargetRef:
-			apiVersion: apps/v1
-    		kind: Deployment
-    		name: my-web-deploy-autoscaling
-		minReplicas: 3
-		maxReplicas: 5
-		metrics:
-		- type: Resource
-  		  resource:
-				name: cpu
-				target:
-					type: Utiliztion
-          	averageUtilization: 70
-		- type: Resource
-  		  resource:
-				name: memory
-				target:
-					type: Utiliztion
-          	averageUtilization: 70			
+  name: my-autoscale
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-web-deploy-autoscale
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 60
+	
 
 
 запускаем
