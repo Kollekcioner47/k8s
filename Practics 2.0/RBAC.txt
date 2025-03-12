@@ -1,0 +1,96 @@
+## 13. Работа с RBAC (Role-Based Access Control) в Kubernetes
+### 13.1. Введение в RBAC
+RBAC (Role-Based Access Control) — это механизм контроля доступа в Kubernetes, который позволяет ограничивать права пользователей и сервисов на уровне кластерных ресурсов.
+
+### 13.2. Основные компоненты RBAC
+- **Role** — определяет права доступа в рамках одного пространства имен.
+- **ClusterRole** — определяет права доступа на уровне всего кластера.
+- **RoleBinding** — связывает пользователя или группу с Role.
+- **ClusterRoleBinding** — связывает пользователя или группу с ClusterRole.
+
+### 13.3. Добавление пользователя ОС в Kubernetes
+#### 1. Создание пользователя в операционной системе
+```bash
+sudo useradd k8suser
+sudo passwd k8suser
+```
+
+#### 2. Генерация сертификата для пользователя
+```bash
+openssl genrsa -out k8suser.key 2048
+openssl req -new -key k8suser.key -out k8suser.csr -subj "/CN=k8suser/O=developers"
+```
+> Поле **CN** — имя пользователя, а **O** — группа (используется в RBAC).
+
+#### 3. Подписание сертификата через CA Kubernetes
+```bash
+sudo openssl x509 -req -in k8suser.csr -CA /etc/kubernetes/pki/ca.crt -CAkey /etc/kubernetes/pki/ca.key -CAcreateserial -out k8suser.crt -days 365
+```
+
+#### 4. Добавление пользователя в конфигурацию kubectl
+```bash
+kubectl config set-credentials k8suser --client-certificate=k8suser.crt --client-key=k8suser.key
+kubectl config set-context k8suser-context --cluster=kubernetes --user=k8suser
+kubectl config use-context k8suser-context
+```
+
+### 13.4. Назначение прав через RBAC
+#### 1. Создание роли `role.yaml`
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k8suser-reader
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+```
+
+#### 2. Привязка роли `rolebinding.yaml`
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k8suser-binding
+  namespace: default
+subjects:
+- kind: User
+  name: k8suser  # Имя пользователя из сертификата
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: k8suser-reader
+  apiGroup: rbac.authorization.k8s.io
+```
+
+#### 3. Применение ролей
+```bash
+kubectl apply -f role.yaml
+kubectl apply -f rolebinding.yaml
+```
+
+### 13.5. Проверка доступа
+#### 1. Проверка доступа к подам
+```bash
+kubectl auth can-i list pods --as=k8suser
+```
+Ожидается, что доступ разрешен.
+
+#### 2. Проверка ограничений на запись
+```bash
+kubectl auth can-i delete pods --as=k8suser
+```
+Ожидается, что доступ запрещен.
+
+### 13.6. Удаление пользователя и прав
+```bash
+kubectl delete -f role.yaml
+kubectl delete -f rolebinding.yaml
+sudo userdel k8suser
+rm k8suser.key k8suser.csr k8suser.crt
+```
+
+---
+
