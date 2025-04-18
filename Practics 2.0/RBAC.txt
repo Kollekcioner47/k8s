@@ -93,4 +93,36 @@ rm k8suser.key k8suser.csr k8suser.crt
 ```
 
 ---
+Get rigth to engineer:
+from engineer:
+openssl genrsa -out /k8s/engineer.key 2048
+openssl req -new -key /k8s/engineer.key -out /k8s/engineer.csr -subj "/CN=engineer/O=admin-group"
+sudo groupadd admin-group
+sudo usermod -aG admin-group engineer
 
+from root:
+openssl x509 -req -in engineer.csr -CA /etc/kubernetes/pki/ca.crt -CAkey /etc/kubernetes/pki/ca.key -CAcreateserial -out /home/engineer/engineer.crt -days 365
+
+from engineer:
+kubectl config set-cluster kubernetes   --server=https://localhost:6443   --certificate-authority=/etc/kubernetes/pki/ca.crt   --embed-certs=true   --kubeconfig=/home/engineer/.kube/config
+
+kubectl config set-credentials engineer   --client-certificate=/home/engineer/engineer.crt   --client-key=/k8s/engineer.key   --embed-certs=true   --kubeconfig=/home/engineer/.kube/config
+
+kubectl config set-context engineer-context   --cluster=kubernetes   --user=engineer   --kubeconfig=/home/engineer/.kube/config
+
+kubectl config use-context engineer-context   --kubeconfig=/home/engineer/.kube/config
+
+from root:
+do yaml:
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: engineer-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: User
+    name: engineer
+    apiGroup: rbac.authorization.k8s.io
