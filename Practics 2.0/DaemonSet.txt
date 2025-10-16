@@ -1,0 +1,31 @@
+Зачем нужен DaemonSet?
+
+Используется для запуска системных служб, которые должны работать на каждой ноде. Например:
+
+🔍 Мониторинг (Prometheus Node Exporter, Datadog Agent)
+
+📦 Логирование (Fluentd, Logstash)
+
+🔄 Сетевые агенты (CNI-плагины, VPN, kube-proxy)
+
+🔐 Сканеры безопасности (Falco, Sysdig)
+
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+spec:
+  selector:
+    matchLabels:
+      app: node-exporter
+  template:
+    metadata:
+      labels:
+        app: node-exporter
+    spec:
+      containers:
+      - name: exporter
+        image: prom/node-exporter
+        ports:
+        - containerPort: 9100
