@@ -1,0 +1,44 @@
+Шаг 1: создаём ConfigMap с конфигом nginx
+
+Предположим, у нас есть простой файл nginx.conf:
+# nginx.conf
+events {}
+
+http {
+  server {
+    listen 80;
+    location / {
+      return 200 'Hello from NGINX + ConfigMap!';
+    }
+  }
+}
+
+Создаём ConfigMap:
+kubectl create configmap nginx-config --from-file=nginx.conf
+
+Шаг 2: деплой pod'а nginx с использованием ConfigMap
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-with-configmap
+spec:
+  containers:
+  - name: nginx
+    image: nginx:latest
+    volumeMounts:
+    - name: config-volume
+      mountPath: /etc/nginx/nginx.conf
+      subPath: nginx.conf
+  volumes:
+  - name: config-volume
+    configMap:
+      name: nginx-config
+Проверим
+
+Запускаем:
+kubectl apply -f nginx-pod.yaml
+Пробрасываем порт:
+kubectl port-forward pod/nginx-with-configmap 8080:80
+Проверяем:
+curl http://localhost:8080
+# => Hello from NGINX + ConfigMap!
