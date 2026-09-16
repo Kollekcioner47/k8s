@@ -1,0 +1,18 @@
+# Практика 6. Запрос хранилища (PersistentVolumeClaim).
+# Применение:  kubectl apply -f manifests/06_volumes/pvc.yaml
+#
+# storageClassName: "" — явный отказ от StorageClass по умолчанию.
+# Если этого не указать, а в кластере есть StorageClass с аннотацией
+# storageclass.kubernetes.io/is-default-class: "true", то PVC получит
+# его автоматически и НЕ свяжется с вручную созданным PV без класса.
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: fileshare
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi

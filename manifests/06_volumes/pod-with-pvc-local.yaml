@@ -1,0 +1,21 @@
+# Практика 6. Под, проверяющий работу local storage.
+# Применение:  kubectl apply -f manifests/06_volumes/pod-with-pvc-local.yaml
+#
+# Порядок применения строго такой: StorageClass -> PV -> PVC -> Pod.
+kind: Pod
+apiVersion: v1
+metadata:
+  name: pod-with-pvc-local
+spec:
+  containers:
+    - name: app
+      image: alpine
+      volumeMounts:
+        - name: data
+          mountPath: /mnt
+      command: ["/bin/sh"]
+      args: ["-c", "sleep 500000"]
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: local-volume

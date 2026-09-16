@@ -1,0 +1,80 @@
+# Практика 5, продолжение. Headless Service и именованные порты.
+# Применение:  kubectl apply -f manifests/05_services/service-headless.yaml
+#
+# ЗАЧЕМ НУЖЕН HEADLESS SERVICE
+#
+# Обычный Service с ClusterIP работает как балансировщик: вы обращаетесь
+# к одному виртуальному адресу, а Kubernetes раскидывает запросы по подам.
+# Клиент не знает и не может узнать, какие поды за этим адресом стоят.
+#
+# Headless Service (clusterIP: None) — наоборот: у него НЕТ виртуального
+# адреса, а DNS-запрос возвращает СПИСОК IP-адресов всех подов. Клиент
+# видит каждый под по отдельности и сам решает, с кем говорить.
+#
+# Когда это нужно:
+#   * СУЩЕСТВЕННО для StatefulSet. У каждого пода там своё постоянное
+#     имя (postgres-0, postgres-1), и клиенты должны подключаться
+#     к конкретному экземпляру. С балансировщиком это невозможно;
+#   * кластерные приложения, которые сами знают про свои реплики:
+#     например, узлы базы данных, обменивающиеся данными между собой;
+#   * когда клиент хочет сам реализовать балансировку или опросить
+#     все экземпляры (gRPC, кластеры Kafka, Elasticsearch).
+#
+# ВМЕСТЕ С ЭТИМ МАНИФЕСТОМ РАЗБЕРЁМ ИМЕНОВАННЫЕ ПОРТЫ.
+# Если у порта в контейнере есть name, то и в пробе, и в Service можно
+# ссылаться на этот порт ПО ИМЕНИ, а не по номеру. Плюс: поменяв номер
+# порта в одном месте, не нужно править остальные.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-headless
+  labels:
+    app: my-web-headless
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-web-headless
+  template:
+    metadata:
+      labels:
+        app: my-web-headless
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            # Имя порта: до 15 символов, строчные буквы, цифры и дефис.
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              # Ссылаемся на порт по имени, а не по номеру.
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-web-headless
+spec:
+  # Именно эта строка делает Service headless.
+  # Обратите внимание: clusterIP: None несовместим с type: NodePort
+  # и type: LoadBalancer — headless бывает только «внутренним».
+  clusterIP: None
+  selector:
+    app: my-web-headless
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: http      # тоже по имени

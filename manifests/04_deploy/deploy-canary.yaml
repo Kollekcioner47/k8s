@@ -1,0 +1,121 @@
+# Практика 4, продолжение. Канареечное развёртывание вручную.
+# Применение:  kubectl apply -f manifests/04_deploy/deploy-canary.yaml
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# RollingUpdate обновляет ВСЕ поды. Но иногда новую версию хочется сначала
+# показать небольшой части трафика: убедиться, что она не падает, и только
+# потом раскатывать на всех. Это называется canary release.
+#
+# Приём без всяких дополнительных инструментов: держим два Deployment
+# одновременно, и они делят между собой трафик одного Service.
+#
+#   * у обоих Deployment есть ОБЩАЯ метка (app: my-web-canary) —
+#     именно её выбирает Service, поэтому в балансировку попадают
+#     поды обеих версий;
+#   * различает их вторая метка (track: stable / track: canary) —
+#     по ней видно, кто есть кто, и можно точечно управлять;
+#   * пропорция трафика задаётся ЧИСЛОМ РЕПЛИК: 4 старых и 1 новая
+#     дадут примерно 20% на новую версию.
+#
+# Здесь вместо nginx взят hashicorp/http-echo: он возвращает заданный
+# текст, поэтому сразу видно, какая версия ответила. Для учебной
+# демонстрации это удобнее, чем одинаковые страницы nginx.
+#
+# ОГРАНИЧЕНИЕ ПРИЁМА: пропорция получается грубой. Управлять ей точно
+# (например, 1% трафика) без service mesh или ingress-аннотаций нельзя.
+# Зато не нужно ничего дополнительно устанавливать — и это честный ответ
+# на вопрос «а как сделать канарейку без Istio».
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-stable
+  labels:
+    app: my-web-canary
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: my-web-canary
+      track: stable
+  template:
+    metadata:
+      labels:
+        app: my-web-canary
+        track: stable
+    spec:
+      containers:
+        - name: echo
+          image: hashicorp/http-echo
+          args:
+            - "-text=STABLE version 1"
+          ports:
+            - containerPort: 5678
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5678
+            initialDelaySeconds: 1
+            periodSeconds: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-canary
+  labels:
+    app: my-web-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-web-canary
+      track: canary
+  template:
+    metadata:
+      labels:
+        app: my-web-canary
+        track: canary
+    spec:
+      containers:
+        - name: echo
+          image: hashicorp/http-echo
+          args:
+            - "-text=CANARY version 2"
+          ports:
+            - containerPort: 5678
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5678
+            initialDelaySeconds: 1
+            periodSeconds: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+# Service выбирает поды по ОБЩЕЙ метке app: my-web-canary,
+# поэтому в него попадают обе версии.
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-web-canary-service
+spec:
+  selector:
+    app: my-web-canary
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 5678
+  type: ClusterIP

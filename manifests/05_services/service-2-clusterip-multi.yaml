@@ -1,0 +1,54 @@
+# Практика 5. Вариант 2: Service с двумя портами на многоконтейнерный Pod.
+# Применение:  kubectl apply -f manifests/05_services/service-2-clusterip-multi.yaml
+#
+# Когда у Service больше одного порта, поле name в каждом port ОБЯЗАТЕЛЬНО.
+# И ещё: имя порта — это IANA_SVC_NAME, не длиннее 15 символов, только строчные
+# буквы, цифры и дефис. Прежние имена my-web-app-listener (20 символов) и
+# not-my-web-app-listener (23) API отвергнет именно по этой причине.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-deploy-multi-pods
+  labels:
+    app: my-k8s-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      project: MegaApp
+  template:
+    metadata:
+      labels:
+        project: MegaApp
+    spec:
+      containers:
+        - name: my-web
+          image: YOUR_DOCKERHUB_LOGIN/k8sphp:latest
+          ports:
+            - containerPort: 80
+
+        - name: not-my-web
+          image: tomcat:8.5.38
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-multi-pods-service
+  labels:
+    env: prod
+    owner: IvanKlimarev
+spec:
+  selector:
+    project: MegaApp
+  ports:
+    - name: web
+      protocol: TCP
+      port: 80         # Service:80  -> под:80
+      targetPort: 80
+    - name: api
+      protocol: TCP
+      port: 8888       # Service:8888 -> под:8080
+      targetPort: 8080
+  type: ClusterIP

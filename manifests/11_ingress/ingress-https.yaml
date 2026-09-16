@@ -1,0 +1,31 @@
+# Практика 11. HTTPS с самоподписанным сертификатом.
+# Применение:  kubectl apply -f manifests/11_ingress/ingress-https.yaml
+#
+# До этого нужно создать Secret с сертификатом:
+#   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+#     -keyout tls.key -out tls.crt -subj "/CN=local.ingress/O=local.ingress"
+#   kubectl create secret tls web-tls --cert=tls.crt --key=tls.key
+#
+# Секция tls говорит контроллеру терминировать TLS этим сертификатом.
+# Порт 443 контроллера нужно пробросить отдельно от 80 — см. практику 11.7.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress-https
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - local.ingress
+      secretName: web-tls
+  rules:
+    - host: local.ingress
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-service
+                port:
+                  number: 80

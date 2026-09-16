@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Values для чарта k8sphp",
+  "description": "Схема проверяет значения до рендеринга шаблонов. Helm применяет её автоматически при install, upgrade, template и lint.",
+  "type": "object",
+  "required": ["container", "replicaCount"],
+  "properties": {
+    "nameOverride": {
+      "description": "Переопределение имени чарта",
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "description": "Переопределение полного имени релиза",
+      "type": "string"
+    },
+    "replicaCount": {
+      "description": "Количество реплик",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "container": {
+      "type": "object",
+      "required": ["image"],
+      "properties": {
+        "image": {
+          "description": "Полное имя образа вместе с тегом. Тег latest не рекомендуется.",
+          "type": "string",
+          "minLength": 3
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "additionalProperties": false
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "nodePort": {
+          "type": ["string", "integer"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ingressEnabled": {
+      "type": "boolean"
+    },
+    "imagePullSecrets": {
+      "type": "array"
+    },
+    "resources": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

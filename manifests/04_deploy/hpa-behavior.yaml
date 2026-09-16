@@ -1,0 +1,66 @@
+# Практика 4, продолжение. HPA с настройкой поведения (behavior).
+# Применение:  kubectl apply -f manifests/04_deploy/hpa-behavior.yaml
+# (сначала должен существовать Deployment my-web-rolling и metrics-server)
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# Обычный HPA реагирует на каждое колебание метрики. На практике это
+# приводит к «дёрганью»: нагрузка подскочила на минуту — HPA поднял
+# десяток подов, нагрузка упала — HPA их снова убрал. Каждый запуск пода
+# это время и ресурсы, а для приложений с прогревом кэша — ещё и
+# деградация.
+#
+# Блок behavior позволяет задать правила: насколько резко можно
+# масштабироваться и сколько времени ждать, прежде чем принимать решение.
+#
+# scaleUp — масштабирование вверх. Здесь реакция должна быть быстрой:
+# лучше поднять лишний под, чем получить отказ в обслуживании. Поэтому
+# stabilizationWindowSeconds: 0 и разрешено удвоение за 30 секунд.
+#
+# scaleDown — масштабирование вниз. Здесь наоборот: спешить некуда.
+# stabilizationWindowSeconds: 300 означает, что HPA сначала 5 минут
+# смотрит на метрики и берёт САМОЕ ВЫСОКОЕ значение за это окно. Если
+# нагрузка была высокой минуту назад, снижать количество подов рано.
+#
+# Асимметрия здесь намеренная и хорошо описывает правильный подход:
+# подниматься быстро, опускаться осторожно.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-web-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-web-rolling
+  minReplicas: 2
+  maxReplicas: 8
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100          # не более чем удвоение
+          periodSeconds: 30
+        - type: Pods
+          value: 4            # и не более 4 подов за раз
+          periodSeconds: 30
+      selectPolicy: Max       # из двух политик выбирается более щедрая
+
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25           # не более четверти подов за раз
+          periodSeconds: 60
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Целевая утилизация считается от REQUESTS, а не от реальных
+          # ядер ноды. Поэтому без requests HPA покажет <unknown>.
+          averageUtilization: 60

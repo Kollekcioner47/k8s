@@ -1,0 +1,22 @@
+# Практика 12. HTTPRoute — правила маршрутизации.
+# Применение:  kubectl apply -f manifests/12_gateway_api/httproute.yaml
+#
+# parentRefs связывает маршрут с Gateway. hostnames должны попадать в
+# hostname листенера и в /etc/hosts на машине, откуда проверяете.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-route
+spec:
+  parentRefs:
+    - name: echo-gateway
+  hostnames:
+    - gateway.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: echo-service
+          port: 80

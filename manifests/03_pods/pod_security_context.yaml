@@ -1,0 +1,73 @@
+# Практика 3, продолжение. securityContext: запуск не от root.
+# Применение:  kubectl apply -f manifests/03_pods/pod_security_context.yaml
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# По умолчанию контейнеры запускаются от root. Если злоумышленник
+# проэксплуатирует уязвимость в приложении, он получит root внутри
+# контейнера, а оттуда попробует выйти на саму ноду. Запуск от
+# непривилегированного пользователя сильно сокращает возможности атаки.
+#
+# Ещё одна причина: политики безопасности кластера (Pod Security Admission)
+# в режиме restricted просто не дадут запустить под от root. В кластерах
+# посерьёзнее это требование по умолчанию, поэтому привыкать стоит сразу.
+#
+# ПРО ГОТОВЫЙ ОБРАЗ. Обычный nginx запускается от root и слушает порт 80:
+# непривилегированный процесс не может занять порт ниже 1024. Поэтому
+# используем официальный образ nginx-unprivileged — он уже настроен
+# работать от пользователя 101 и слушать порт 8080. Это стандартный приём:
+# для популярных приложений почти всегда есть «unprivileged» вариант.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web-secure
+  labels:
+    app: my-web
+spec:
+  # Настройки уровня пода применяются ко всем контейнерам.
+  securityContext:
+    runAsNonRoot: true     # запуск от root запрещён: под не стартует, если образ требует root
+    runAsUser: 101         # uid непривилегированного пользователя в образе
+    runAsGroup: 101
+    fsGroup: 101           # владелец смонтированных томов
+    seccompProfile:
+      type: RuntimeDefault  # стандартный профиль seccomp, ограничивает набор системных вызовов
+
+  containers:
+    - name: web
+      image: nginxinc/nginx-unprivileged:1.27-alpine
+      ports:
+        - containerPort: 8080
+
+      # Настройки уровня контейнера.
+      securityContext:
+        allowPrivilegeEscalation: false   # запрет на получение дополнительных привилегий
+        readOnlyRootFilesystem: true      # корневая файловая система только для чтения
+        capabilities:
+          drop:
+            - ALL                         # убираем все Linux-возможности
+
+      # Раз корневая ФС только для чтения, каталоги, в которые nginx
+      # обязан писать, выносим на отдельные временные тома.
+      # Если под не стартует, посмотрите его логи: приложению может
+      # понадобиться ещё один записываемый каталог — это нормальный
+      # итеративный процесс при переходе на read-only.
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /var/cache/nginx
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+
+  volumes:
+    - name: tmp
+      emptyDir: {}
+    - name: cache
+      emptyDir: {}

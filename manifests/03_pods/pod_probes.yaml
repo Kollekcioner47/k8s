@@ -1,0 +1,71 @@
+# Практика 3, продолжение. Пробы: readiness, liveness, startup.
+# Применение:  kubectl apply -f manifests/03_pods/pod_probes.yaml
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# Без проб Kubernetes знает о контейнере только одно: процесс запущен.
+# Но «процесс запущен» и «приложение готово принимать трафик» — это разные
+# вещи. Приложение может стартовать 30 секунд, всё это время отвечая
+# ошибкой. Без проб Service начнёт отправлять на него запросы сразу,
+# и пользователи увидят 500-е ошибки.
+#
+# readinessProbe — «готов ли я принимать трафик». Пока проба не проходит,
+#   под исключён из эндпоинтов Service. Контейнер при этом НЕ перезапускается.
+#
+# livenessProbe — «жив ли я». Если проба перестала проходить, контейнер
+#   перезапускают. Это лечит зависания, которые не приводят к падению процесса.
+#
+# startupProbe — «я ещё только запускаюсь». Пока она не прошла, liveness
+#   и readiness не проверяются вообще. Нужна для медленно стартующих
+#   приложений: иначе liveness убьёт контейнер раньше, чем тот успеет подняться.
+#
+# ГЛАВНАЯ ОШИБКА НОВИЧКА: поставить liveness туда, где нужна readiness.
+# Приложение под нагрузкой отвечает медленно → liveness не успевает →
+# контейнер перезапускается → под нагрузкой он снова не успевает →
+# бесконечный цикл перезапусков. Классика.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web-probes
+  labels:
+    app: my-web
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine
+      ports:
+        - containerPort: 80
+
+      # Даём приложению до 60 секунд на старт (30 попыток по 2 секунды).
+      startupProbe:
+        httpGet:
+          path: /
+          port: 80
+        failureThreshold: 30
+        periodSeconds: 2
+
+      # Готовность проверяем часто: от неё зависит, попадёт ли трафик.
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 2
+        periodSeconds: 5
+        failureThreshold: 3
+
+      # Живучесть проверяем реже и мягче: перезапуск — дорогая операция.
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        failureThreshold: 3
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi

@@ -1,0 +1,19 @@
+# Практика 6. Под, использующий NFS-том через PVC.
+# Применение:  kubectl apply -f manifests/06_volumes/pod-with-nfs.yaml
+kind: Pod
+apiVersion: v1
+metadata:
+  name: pod-with-nfs
+spec:
+  containers:
+    - name: app
+      image: alpine
+      volumeMounts:
+        - name: data
+          mountPath: /mnt/nfs
+      command: ["/bin/sh"]
+      args: ["-c", "sleep 500000"]
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: fileshare

@@ -1,0 +1,36 @@
+# Практика 3, продолжение. Ресурсы: requests и limits.
+# Применение:  kubectl apply -f manifests/03_pods/pod_resources.yaml
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# requests — сколько ресурсов поду ГАРАНТИРОВАНО. Планировщик при выборе ноды
+#   складывает requests всех подов и не поставит под туда, где они не
+#   помещаются. Если записать requests неправильно (например, занизить),
+#   нода окажется перегружена, и поды начнут вытесняться.
+#
+# limits — потолок, выше которого контейнер не пустят. По CPU контейнер
+#   просто начнут ограничивать (throttling), а по памяти превышение лимита
+#   приводит к убийству контейнера с причиной OOMKilled.
+#
+# ВАЖНО: requests и limits — это ещё и основа для автомасштабирования.
+# HPA считает процент от requests, поэтому без requests он показывает
+# <unknown>. Об этом подробно в практике 4.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web-resources
+  labels:
+    app: my-web
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine
+      ports:
+        - containerPort: 80
+      resources:
+        requests:
+          cpu: 100m        # 100 millicores = 0.1 ядра
+          memory: 128Mi
+        limits:
+          cpu: 500m         # при упоре в этот потолок контейнер тормозят
+          memory: 256Mi     # при превышении контейнер убьют (OOMKilled)

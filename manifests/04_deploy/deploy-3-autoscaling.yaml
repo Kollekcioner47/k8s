@@ -1,0 +1,71 @@
+# Практика 4. Вариант 3: Deployment + HorizontalPodAutoscaler.
+# Применение:  kubectl apply -f manifests/04_deploy/deploy-3-autoscaling.yaml
+#
+# ТРЕБОВАНИЯ, без которых автомасштабирование не заработает:
+#   1) в кластере должен быть установлен metrics-server;
+#   2) у контейнера ОБЯЗАТЕЛЬНО должны быть заданы requests по тем ресурсам,
+#      по которым масштабируем: без requests HPA покажет <unknown>/70%.
+#
+# Установка metrics-server:
+#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#   kubectl -n kube-system get deploy metrics-server
+#   kubectl top nodes && kubectl top pods
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-deploy-autoscaling
+  labels:
+    app: my-k8s-app
+    env: prod
+    owner: Engineer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      project: as
+  template:
+    metadata:
+      labels:
+        project: as
+    spec:
+      containers:
+        - name: prod-web
+          image: YOUR_DOCKERHUB_LOGIN/k8sphp:version2
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+# ВНИМАНИЕ: в API autoscaling/v2 полей targetAverageUtilization НЕ существует.
+# Правильная запись — target: {type: Utilization, averageUtilization: N}.
+# Запись targetAverageUtilization была в устаревшем autoscaling/v2beta1
+# и в autoscaling/v2 вызовет ошибку "unknown field".
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-autoscale
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-web-deploy-autoscaling
+  minReplicas: 3
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

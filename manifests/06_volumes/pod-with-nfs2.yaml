@@ -1,0 +1,19 @@
+# Практика 6. Второй под на том же PVC — проверка режима ReadWriteMany.
+# Применение:  kubectl apply -f manifests/06_volumes/pod-with-nfs2.yaml
+kind: Pod
+apiVersion: v1
+metadata:
+  name: pod-with-nfs2
+spec:
+  containers:
+    - name: app
+      image: alpine
+      volumeMounts:
+        - name: data
+          mountPath: /mnt/nfs
+      command: ["/bin/sh"]
+      args: ["-c", "sleep 500000"]
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: fileshare

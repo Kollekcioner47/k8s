@@ -1,0 +1,46 @@
+# Практика 5. Вариант 1: Deployment + Service типа ClusterIP.
+# Применение:  kubectl apply -f manifests/05_services/service-1-clusterip-single.yaml
+#
+# ВАЖНО: имя контейнера — это DNS-метка, только строчные буквы.
+# name: SuperApp-web будет отвергнуто API, поэтому здесь superapp-web.
+# Значение метки (project: SuperApp) при этом может быть с заглавными —
+# на метки ограничение DNS-метки не распространяется.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-deploy
+  labels:
+    app: my-k8s-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      project: SuperApp
+  template:
+    metadata:
+      labels:
+        project: SuperApp
+    spec:
+      containers:
+        - name: superapp-web
+          image: YOUR_DOCKERHUB_LOGIN/k8sphp:latest
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-single-pod-service
+  labels:
+    env: prod
+    owner: IvanKlimarev
+spec:
+  # selector у Service ищет поды по меткам, а не по имени пода.
+  selector:
+    project: SuperApp
+  ports:
+    - name: app-listener
+      protocol: TCP
+      port: 80         # порт самого Service (ClusterIP:80)
+      targetPort: 80   # порт на поде, куда перенаправляется трафик
+  type: ClusterIP

@@ -1,0 +1,28 @@
+# Практика 4. Вариант 1: простой Deployment.
+# Применение:  kubectl apply -f manifests/04_deploy/deploy-1-simple.yaml
+#
+# В Deployment обязательны две вещи, которые должны совпадать:
+#   spec.selector.matchLabels  — какие поды считать «своими»
+#   spec.template.metadata.labels — метки, которые получат созданные поды
+# Если они не совпадают, API вернёт: "selector does not match template labels".
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-deploy
+  labels:
+    app: my-k8s-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      project: prod
+  template:
+    metadata:
+      labels:
+        project: prod
+    spec:
+      containers:
+        - name: prod-web
+          image: YOUR_DOCKERHUB_LOGIN/k8sphp:version1
+          ports:
+            - containerPort: 80

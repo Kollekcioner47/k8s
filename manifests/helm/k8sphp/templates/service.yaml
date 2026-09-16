@@ -1,0 +1,27 @@
+{{/*
+Шаблон Service.
+
+Имя порта здесь всегда http, а не что-то вроде «имя релиза + listener».
+Причина в ограничении Kubernetes: имя порта — это IANA_SVC_NAME, не длиннее
+15 символов. Полное имя релиза легко превышает этот предел (например,
+my-production-release-listener — 31 символ), и манифест будет отвергнут.
+Простое http такой возможности лишено.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "k8sphp.fullname" . }}
+  labels:
+    {{- include "k8sphp.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "k8sphp.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ .Values.service.port }}
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+      targetPort: http

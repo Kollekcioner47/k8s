@@ -1,0 +1,112 @@
+# Практика 6, продолжение. StatefulSet: хранилище, привязанное к поду.
+# Применение:  kubectl apply -f manifests/06_volumes/statefulset.yaml
+#
+# Требуется StorageClass — по умолчанию здесь указан local-path,
+# его создаёт local-path-provisioner (см. storageclass-standard.yaml).
+# Если у вас класс называется иначе, поправьте поле storageClassName
+# в блоке volumeClaimTemplates.
+#
+# ЗАЧЕМ НУЖЕН STATEFULSET, ЕСЛИ ЕСТЬ DEPLOYMENT
+#
+# Deployment относится к подам как к взаимозаменяемым: имена случайные,
+# IP меняются, тома общие или вообще отсутствуют. Для веб-приложения это
+# идеально. Для базы данных — катастрофа, потому что:
+#   * у каждого экземпляра базы ДОЛЖНЫ быть свои данные, а не общий диск;
+#   * экземплярам нужно ЗНАТЬ друг друга по именам (репликация, кворум);
+#   * после перезапуска под должен получить ТОТ ЖЕ самый диск.
+#
+# StatefulSet даёт ровно это:
+#
+#   1. ПОСТОЯННЫЕ ИМЕНА. Поды называются предсказуемо: web-0, web-1,
+#      web-2. Не случайный суффикс, а порядковый номер. Имена сохраняются
+#      при перезапуске.
+#
+#   2. СВОЙ ТОМ КАЖДОМУ ПОДУ. Блок volumeClaimTemplates создаёт отдельный
+#      PVC для каждого пода автоматически. Имена получаются такие:
+#      www-web-0, www-web-1, www-web-2. Именно поэтому говорят, что
+#      «том следует за подом».
+#
+#   3. ПОСТОЯННОЕ DNS-ИМЯ. Благодаря headless Service (serviceName ниже)
+#      каждый под доступен по адресу web-0.nginx-sts.default.svc.cluster.local.
+#
+#   4. ПОСЛЕДОВАТЕЛЬНЫЙ ЗАПУСК. Поды создаются по очереди: web-1 не
+#      начнёт запускаться, пока web-0 не станет готовым. При удалении —
+#      наоборот, с конца. Это медленнее Deployment, зато предсказуемо.
+#
+# ВАЖНОЕ ОТЛИЧИЕ ОТ DEPLOYMENT, О КОТОРОМ ЧАСТО ЗАБЫВАЮТ: удалив
+# StatefulSet, вы НЕ удалите PVC. Тома останутся, чтобы данные не пропали
+# случайно. Удалять их нужно отдельно и осознанно.
+---
+# Headless Service обязателен: именно он обеспечивает каждому поду
+# постоянное сетевое имя. Без него serviceName работать не будет.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-sts
+  labels:
+    app: nginx-sts
+spec:
+  clusterIP: None
+  selector:
+    app: nginx-sts
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  # Имя headless Service, который обслуживает этот StatefulSet.
+  serviceName: nginx-sts
+
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: nginx-sts
+
+  template:
+    metadata:
+      labels:
+        app: nginx-sts
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 80
+          volumeMounts:
+            # Имя тома должно совпадать с metadata.name в volumeClaimTemplates.
+            - name: www
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+  # ЗДЕСЬ И ЖИВЁТ ГЛАВНОЕ ОТЛИЧИЕ. StatefulSet сам создаёт по одному PVC
+  # на каждую реплику. Руками их создавать не нужно.
+  # Имена получатся: www-web-0, www-web-1, www-web-2.
+  volumeClaimTemplates:
+    - metadata:
+        name: www
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,26 @@
+# Практика 11. Пример 1: маршрутизация по хосту.
+# Применение:  kubectl apply -f manifests/11_ingress/ingress.yaml
+#
+# Ключевое отличие networking.k8s.io/v1 от старого extensions/v1beta1:
+# вместо serviceName/servicePort используется вложенный backend.service.
+# Поля serviceName и servicePort в этой версии API НЕ существуют и вызовут
+# ошибку "unknown field". Поле pathType обязательно.
+#
+# Для path: / аннотация rewrite-target не нужна: переписывать нечего.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: local.ingress
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-service
+                port:
+                  number: 80

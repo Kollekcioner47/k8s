@@ -1,0 +1,22 @@
+# Практика Helm. Метаданные чарта.
+# Применение:  helm install app ./manifests/helm/k8sphp
+#
+# Имя чарта (name) должно быть в нижнем регистре: Helm и его линтер
+# отвергают заглавные буквы, поэтому App-HelmChart здесь не подходит.
+apiVersion: v2
+name: k8sphp
+description: My helm chart for K8s
+type: application
+version: 0.1.0        # версия чарта (меняется при изменении шаблонов)
+appVersion: "1.0.0"   # версия приложения (версия вашего образа)
+
+keywords:
+  - apache
+  - http
+  - https
+  - Klimarev
+
+maintainers:
+  - name: Ivan Klimarev
+    email: iklimarev@gmail.com
+    url: www.iklimarev.ru

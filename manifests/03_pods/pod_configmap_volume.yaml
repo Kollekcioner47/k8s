@@ -1,0 +1,47 @@
+# Практика 3, продолжение. ConfigMap, смонтированный как файлы.
+# Применение:  kubectl apply -f manifests/03_pods/pod_configmap_volume.yaml
+#
+# Требуется уже созданный ConfigMap app-config — примените сначала
+# manifests/03_pods/configmap_app-config.yaml.
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# Многие приложения читают конфигурацию из файла, а не из переменных
+# окружения (nginx, prometheus, postgres и другие). Монтирование ConfigMap
+# томом отдаёт каждый ключ отдельным файлом — ровно то, что нужно.
+#
+# ГЛАВНОЕ ПРЕИМУЩЕСТВО перед переменными окружения: смонтированный том
+# обновляется автоматически, когда ConfigMap меняется. Примерно в течение
+# минуты файл внутри контейнера станет новым. Приложению остаётся
+# перечитать конфигурацию; некоторые умеют это сами, некоторым нужен
+# сигнал (например, nginx -s reload).
+#
+# ВАЖНОЕ ИСКЛЮЧЕНИЕ: автоматическое обновление НЕ работает, если монтировать
+# отдельный файл через subPath. Такой файл «застывает» на моменте старта
+# контейнера. Ограничение самого Kubernetes, и оно часто застаёт врасплох.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web-config-volume
+  labels:
+    app: my-web
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine
+      command: ["sh", "-c", "ls -l /etc/app ; echo '--- app.properties ---' ; cat /etc/app/app.properties ; sleep 3600"]
+      volumeMounts:
+        - name: config
+          mountPath: /etc/app
+          readOnly: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+  volumes:
+    - name: config
+      configMap:
+        name: app-config

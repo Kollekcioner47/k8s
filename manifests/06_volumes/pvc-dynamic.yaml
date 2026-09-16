@@ -1,0 +1,24 @@
+# Практика 6, продолжение. PVC с динамическим созданием тома.
+# Применение:  kubectl apply -f manifests/06_volumes/pvc-dynamic.yaml
+#
+# Требуется StorageClass standard — сначала примените
+# manifests/06_volumes/storageclass-standard.yaml (и поставьте провижнер,
+# см. комментарий в том файле).
+#
+# СРАВНИТЕ С БАЗОВОЙ ПРАКТИКОЙ. Там мы писали storageClassName: "" —
+# это означало «искать готовый PV, созданный руками». Здесь указано имя
+# класса, и это означает «создай новый том по этому классу».
+#
+# Разница в объёме усилий принципиальная: во втором случае администратору
+# ничего делать не нужно. Разработчик создаёт PVC и получает том.
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: dynamic-claim
+spec:
+  storageClassName: "standard"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

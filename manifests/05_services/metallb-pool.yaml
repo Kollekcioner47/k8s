@@ -1,0 +1,65 @@
+# Практика 5, продолжение. MetalLB: LoadBalancer на bare-metal.
+# Применение:  kubectl apply -f manifests/05_services/metallb-pool.yaml
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# Service типа LoadBalancer в облаке работает «сам»: облачный провайдер
+# видит запрос и создаёт настоящий балансировщик с внешним IP.
+#
+# В кластере на своих серверах такого провайдера нет. Kubernetes создаёт
+# Service, но EXTERNAL-IP навсегда остаётся в состоянии <pending>:
+# выдать адрес некому. Это не ошибка конфигурации, а отсутствие
+# реализации.
+#
+# MetalLB закрывает эту дыру: он следит за сервисами типа LoadBalancer
+# и выдаёт им IP-адреса из пула, который вы ему укажете. В режиме L2 он
+# отвечает на ARP-запросы для этих адресов, поэтому трафик приходит
+# на одну из нод кластера.
+#
+# ФАЙЛ СОСТОИТ ИЗ ДВУХ ЧАСТЕЙ, И ОБЕ ОБЯЗАТЕЛЬНЫ:
+#
+#   IPAddressPool — какие адреса MetalLB имеет право выдавать.
+#     Диапазон должен быть свободным в вашей сети и находиться в той же
+#     подсети, что и ноды, иначе клиенты не смогут до него достучаться.
+#
+#   L2Advertisement — объявление о том, что пул раздаётся по L2 (ARP).
+#     Без этого объекта IP-адреса будут выданы, но трафик до них
+#     не дойдёт — и это совершенно неочевидная причина «сервис висит
+#     с адресом, но не отвечает».
+#
+# ПОРЯДОК УСТАНОВКИ:
+#
+#   1) ставим сам MetalLB:
+#      kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+#      (версию проверьте на странице релизов проекта)
+#
+#   2) ждём, пока поды поднимутся:
+#      kubectl get pods -n metallb-system
+#
+#   3) применяем этот файл:
+#      kubectl apply -f manifests/05_services/metallb-pool.yaml
+#
+#   4) проверяем на сервисе типа LoadBalancer:
+#      kubectl get svc
+#      — в колонке EXTERNAL-IP вместо <pending> появится адрес из пула.
+#
+# ЗАМЕНИТЕ ДИАПАЗОН НА СВОЙ. Адреса должны быть свободны: MetalLB
+# не проверяет, не занял ли их кто-то другой, и конфликт приведёт
+# к непредсказуемому поведению в сети.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: lab-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.168.250.240-192.168.250.250
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: lab-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - lab-pool

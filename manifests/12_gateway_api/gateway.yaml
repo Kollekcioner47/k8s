@@ -1,0 +1,28 @@
+# Практика 12. Gateway — HTTP-листенер.
+# Применение:  kubectl apply -f manifests/12_gateway_api/gateway.yaml
+#
+# ВАЖНО, чего не было в старой версии практики: gatewayClassName: nginx
+# заработает только если в кластере установлен контроллер, который объявляет
+# GatewayClass с именем nginx. Сам по себе ingress-nginx его НЕ создаёт —
+# это другое изделие. Нужен NGINX Gateway Fabric (см. инструкцию в практике).
+# Проверить, что класс принят:
+#   kubectl get gatewayclass
+# В колонке ACCEPTED должно быть True. Если класса нет — Gateway навсегда
+# останется без адреса, а маршруты не примутся.
+#
+# apiVersion здесь v1: v1alpha2 из старой практики устарел, Gateway API
+# вышел в GA.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: echo-gateway
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: gateway.local
+      allowedRoutes:
+        namespaces:
+          from: Same

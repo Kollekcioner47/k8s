@@ -1,0 +1,19 @@
+# Практика 3. Тот же Pod, но с метками (labels).
+# Применение:  kubectl apply -f manifests/03_pods/pod_web_v2_labels.yaml
+#
+# Метки — это пары ключ=значение. По ним Service и Deployment находят нужные поды.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web
+  labels:
+    env: prod
+    app: main
+    tier: frontend
+    owner: Engineer
+spec:
+  containers:
+    - name: container-apache
+      image: YOUR_DOCKERHUB_LOGIN/k8sphp:version1
+      ports:
+        - containerPort: 80

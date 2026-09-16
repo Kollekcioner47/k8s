@@ -1,0 +1,120 @@
+# Практика 3, продолжение. ЧЕТЫРЕ НАМЕРЕННО СЛОМАННЫХ ПОДА.
+# Применение:  kubectl apply -f manifests/03_pods/pod_broken_examples.yaml
+#
+# Эти поды НЕ должны работать: они нужны, чтобы вы увидели четыре самых
+# частых состояния сбоя и научились их различать.
+#
+# После применения подождите 30-60 секунд, чтобы состояния устоялись:
+#     kubectl get pods -l purpose=troubleshooting
+#
+# Ожидаемая картина:
+#     broken-image     ImagePullBackOff   опечатка в теге образа
+#     broken-command   CrashLoopBackOff   приложение падает при старте
+#     broken-oom       OOMKilled          превышен лимит памяти
+#     broken-pending   Pending            планировщик не может найти ноду
+#
+# Разбор причин — в разделе 11 практики 3.
+---
+
+# 1. ImagePullBackOff: в теге образа опечатка (alpine-ops вместо alpine).
+# Именно так выглядит самая частая ошибка новичка — невнимательность
+# в одной букве.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-image
+  labels:
+    purpose: troubleshooting
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine-ops
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+---
+
+# 2. CrashLoopBackOff: приложение запускается и сразу падает с кодом 1.
+# Имитация ситуации «не смогло подключиться к базе данных».
+# restartPolicy: Always (значение по умолчанию) заставляет kubelet
+# перезапускать контейнер бесконечно, увеличивая паузу между попытками.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-command
+  labels:
+    purpose: troubleshooting
+spec:
+  restartPolicy: Always
+  containers:
+    - name: web
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "starting application..."
+          echo "ERROR: cannot connect to database at postgres:5432"
+          exit 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+---
+
+# 3. OOMKilled: лимит памяти 100Mi, а процесс пытается занять 150M.
+# Память нельзя «притормозить» так, как CPU: контейнер просто убивают.
+# Код возврата будет 137 = 128 + 9, где 9 — сигнал SIGKILL.
+#
+# Сравните с CPU: превышение лимита CPU контейнер не убивает,
+# его лишь ограничивают в скорости.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-oom
+  labels:
+    purpose: troubleshooting
+spec:
+  containers:
+    - name: stress
+      image: polinux/stress:1.0.4
+      command: ["stress"]
+      args: ["--vm", "1", "--vm-bytes", "150M", "--vm-hang", "1"]
+      resources:
+        requests:
+          cpu: 50m
+          memory: 50Mi
+        limits:
+          cpu: 200m
+          memory: 100Mi
+---
+
+# 4. Pending: запрошено 100 ядер CPU — столько нет ни на одной ноде
+# учебного кластера, поэтому планировщик не может выбрать место.
+#
+# Pending означает «под ещё не запущен», а не «под сломался».
+# Причину всегда смотрим в событиях: kubectl describe pod broken-pending
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-pending
+  labels:
+    purpose: troubleshooting
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine
+      resources:
+        requests:
+          cpu: "100"
+          memory: 128Mi
+        limits:
+          cpu: "100"
+          memory: 256Mi

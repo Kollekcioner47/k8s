@@ -1,0 +1,13 @@
+# Практика 6. PVC для локального PV.
+# Применение:  kubectl apply -f manifests/06_volumes/pvc-local.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: local-volume
+spec:
+  storageClassName: "local-storage"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

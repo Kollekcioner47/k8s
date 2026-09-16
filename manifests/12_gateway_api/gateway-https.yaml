@@ -1,0 +1,49 @@
+# Практика 12. HTTPS: Gateway с TLS-листенером и привязанный к нему HTTPRoute.
+# Применение:  kubectl apply -f manifests/12_gateway_api/gateway-https.yaml
+#
+# До этого создайте Secret с сертификатом:
+#   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+#     -keyout tls.key -out tls.crt -subj "/CN=gateway.local/O=gateway.local"
+#   kubectl create secret tls gateway-tls --cert=tls.crt --key=tls.key
+#
+# Gateway и HTTPRoute здесь НОВЫЕ объекты с другими именами, потому что
+# маршрут ссылается на шлюз по имени. Старые echo-gateway и echo-route
+# нужно удалить, иначе получите два шлюза на одних портах:
+#   kubectl delete -f manifests/12_gateway_api/gateway.yaml
+#   kubectl delete -f manifests/12_gateway_api/httproute.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: echo-gateway-https
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: gateway.local
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: gateway-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-route-https
+spec:
+  parentRefs:
+    - name: echo-gateway-https
+  hostnames:
+    - gateway.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: echo-service
+          port: 80

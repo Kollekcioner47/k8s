@@ -1,0 +1,14 @@
+# Практика 13. Role — список разрешений в пределах одного namespace.
+# Применение:  kubectl apply -f manifests/13_rbac/role.yaml
+#
+# Role сама по себе ничего никому не разрешает — это только описание набора
+# прав. Кому их выдать, решает RoleBinding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k8suser-reader
+  namespace: default
+rules:
+  - apiGroups: [""]        # "" — это core-группа: pods, services, secrets и т.д.
+    resources: ["pods"]
+    verbs: ["get", "list"]

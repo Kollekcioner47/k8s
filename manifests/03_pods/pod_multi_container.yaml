@@ -1,0 +1,25 @@
+# Практика 3. Pod из двух контейнеров.
+# Применение:  kubectl apply -f manifests/03_pods/pod_multi_container.yaml
+#
+# Контейнеры одного пода делят один сетевой namespace: у них общий IP,
+# и они видят друг друга по localhost. Порты поэтому не должны совпадать.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+  labels:
+    env: prod
+    app: main
+    tier: frontend
+    owner: Engineer
+spec:
+  containers:
+    - name: container-web
+      image: YOUR_DOCKERHUB_LOGIN/k8sphp:version1
+      ports:
+        - containerPort: 80
+
+    - name: container-api
+      image: tomcat:8.5.38
+      ports:
+        - containerPort: 8080

@@ -1,0 +1,64 @@
+# Практика 4, продолжение. Стратегия Recreate: обновление с простоем.
+# Применение:  kubectl apply -f manifests/04_deploy/deploy-recreate.yaml
+#
+# ЗАЧЕМ ЭТО НУЖНО, ЕСЛИ ЕСТЬ ROLLINGUPDATE
+#
+# Recreate делает ровно то, чего мы избегали: сначала удаляет ВСЕ старые
+# поды, и только потом поднимает новые. Приложение полностью недоступно
+# на время обновления.
+#
+# Выглядит как шаг назад, но в некоторых случаях это единственный
+# корректный вариант:
+#
+#   * приложение не умеет работать в двух версиях одновременно —
+#     например, новая версия поменяла формат данных в базе, и старый
+#     код с этим форматом уже не совместим. При RollingUpdate старые
+#     и новые поды работают вместе и портят друг другу данные;
+#   * приложение захватывает эксклюзивную блокировку или файл;
+#   * по требованиям лицензии одновременно может работать только один
+#     экземпляр.
+#
+# ВЫБОР МЕЖДУ СТРАТЕГИЯМИ — это не «сделать хорошо или плохо», а вопрос
+# совместимости версий. Если версии совместимы — RollingUpdate. Если нет —
+# Recreate, и тогда простой планируют заранее (окно обслуживания).
+#
+# Параметры maxSurge и maxUnavailable для Recreate не действуют: они
+# относятся только к RollingUpdate.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-recreate
+  labels:
+    app: my-web
+spec:
+  replicas: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: my-web
+      track: recreate
+  template:
+    metadata:
+      labels:
+        app: my-web
+        track: recreate
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

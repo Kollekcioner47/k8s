@@ -1,0 +1,78 @@
+{{/*
+Hook: задача, которая выполняется в определённый момент жизненного цикла
+релиза.
+
+ЗАЧЕМ ЭТО НУЖНО
+Обычные объекты чарта Helm создаёт и забывает. Но некоторые действия нужно
+выполнить ДО того, как приложение запустится, или ПОСЛЕ. Классический
+пример — миграция схемы базы данных: если приложение стартует раньше, чем
+применены миграции, оно упадёт.
+
+Доступные моменты (hooks):
+  pre-install   — до установки чарта;
+  post-install  — после установки;
+  pre-upgrade   — до обновления;
+  post-upgrade  — после обновления;
+  pre-rollback  — до отката;
+  post-rollback — после отката;
+  pre-delete    — до удаления релиза;
+  test          — при выполнении helm test.
+
+КАК ЧИТАТЬ АННОТАЦИИ НИЖЕ
+
+  "helm.sh/hook": pre-install,pre-upgrade
+    выполнять перед установкой и перед каждым обновлением.
+    Обратите внимание: при обновлении hook выполнится СНОВА. Для миграций
+    это то, что нужно, — они должны быть идемпотентными.
+
+  "helm.sh/hook-weight": "-5"
+    порядок среди хуков одного типа. Меньшее число — раньше.
+    Отрицательные значения допустимы.
+
+  "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    before-hook-creation — удалить предыдущий экземпляр хука перед
+      созданием нового. Без этого повторный helm upgrade упадёт:
+      Job с таким именем уже существует;
+    hook-succeeded — удалить после успешного выполнения.
+    Есть ещё hook-failed, но он нужен редко: упавший Job полезнее
+    оставить для разбора.
+
+ДРУГАЯ ПОЛЕЗНАЯ АННОТАЦИЯ, которой здесь нет, но которую стоит знать:
+  "helm.sh/hook-delete-policy": hook-failed оставляет упавшую задачу
+  в кластере, чтобы можно было посмотреть её логи.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "k8sphp.fullname" . }}-migrate"
+  labels:
+    {{- include "k8sphp.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        {{- include "k8sphp.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "running database migrations..."
+              sleep 2
+              echo "migrations applied"
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

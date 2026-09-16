@@ -1,0 +1,89 @@
+# Практика 5, продолжение. NodePort: фиксированный порт и externalTrafficPolicy.
+# Применение:  kubectl apply -f manifests/05_services/service-nodeport.yaml
+#
+# ЗАЧЕМ ФИКСИРОВАТЬ nodePort
+#
+# Без параметра nodePort Kubernetes выбирает порт случайно из диапазона
+# 30000-32767. Для учебной демонстрации это неудобно, а в реальной жизни
+# создаёт проблему: если порт выбирается случайно, то после пересоздания
+# Service он может измениться, и все внешние системы, настроенные на старый
+# адрес, сломаются. Поэтому внешние интеграции всегда требуют
+# фиксированного порта, а правило файервола пишут заранее.
+#
+# ЗАЧЕМ externalTrafficPolicy: Local
+#
+# Это параметр, о котором почти никто не знает, а он решает сразу две задачи.
+#
+# По умолчанию (Cluster) запрос приходит на любую ноду и дальше
+# ПЕРЕНАПРАВЛЯЕТСЯ на ноду с подом. Из-за этого:
+#   * теряется исходный IP клиента — приложение видит IP ноды, а не посетителя.
+#     Ломается всё, что зависит от реального IP: логи, геолокация,
+#     rate limiting по адресу;
+#   * появляется лишний сетевой переход между нодами.
+#
+# Со значением Local нода принимает трафик ТОЛЬКО если на ней самой есть
+# готовый под. Тогда:
+#   * приложение видит настоящий IP клиента;
+#   * нет лишнего перехода.
+#
+# У этого есть цена, и её надо понимать: если на ноде нет подов этого
+# сервиса, она не примет трафик вообще — запрос получит отказ. Поэтому
+# на балансировщике перед такими нодами нужна проверка здоровья, а в
+# кластере поды желательно размещать на всех нодах (например, DaemonSet).
+# Для учебного стенда с двумя-тремя нодами и реплик больше одной это
+# обычно работает, но проверяйте: kubectl get pods -o wide покажет,
+# на каких нодах есть поды.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-nodeport
+  labels:
+    app: my-web-nodeport
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-web-nodeport
+  template:
+    metadata:
+      labels:
+        app: my-web-nodeport
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-web-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: my-web-nodeport
+
+  # Local — не перенаправлять на другие ноды, сохранять IP клиента.
+  externalTrafficPolicy: Local
+
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80            # порт самого Service внутри кластера
+      targetPort: http    # порт на поде (по имени)
+      nodePort: 30080     # фиксированный внешний порт на каждой ноде

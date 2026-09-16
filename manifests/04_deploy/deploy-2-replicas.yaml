@@ -1,0 +1,25 @@
+# Практика 4. Вариант 2: Deployment с тремя репликами.
+# Применение:  kubectl apply -f manifests/04_deploy/deploy-2-replicas.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-deploy-replicas
+  labels:
+    app: my-k8s-app
+    env: prod
+    owner: Engineer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      project: repa
+  template:
+    metadata:
+      labels:
+        project: repa
+    spec:
+      containers:
+        - name: prod-web
+          image: YOUR_DOCKERHUB_LOGIN/k8sphp:version2
+          ports:
+            - containerPort: 80

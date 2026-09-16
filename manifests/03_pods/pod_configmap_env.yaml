@@ -1,0 +1,58 @@
+# Практика 3, продолжение. ConfigMap как переменные окружения.
+# Применение:  kubectl apply -f manifests/03_pods/pod_configmap_env.yaml
+#
+# Требуется уже созданный ConfigMap app-config — примените сначала
+# manifests/03_pods/configmap_app-config.yaml.
+#
+# ЗАЧЕМ ЭТО НУЖНО
+#
+# Самый привычный способ передать настройки в приложение — переменные
+# окружения. Большинство приложений и официальных образов читают
+# конфигурацию именно оттуда.
+#
+# envFrom подставляет СРАЗУ ВСЕ ключи ConfigMap как переменные окружения.
+# Это удобно, но у способа есть цена: если в ConfigMap позже появится
+# ключ, который совпадёт с именем переменной внутри образа (например,
+# PATH или HOME), вы можете внезапно сломать приложение. Поэтому для
+# больших ConfigMap лучше перечислять ключи явно.
+#
+# ВАЖНОЕ ОГРАНИЧЕНИЕ, о котором стоит знать заранее: переменные окружения
+# НЕ обновляются при изменении ConfigMap. Контейнер нужно пересоздать
+# (kubectl rollout restart или просто удалить под). Если нужна
+# автоматическая подстановка изменений — используйте монтирование томом,
+# см. pod_configmap_volume.yaml.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web-config-env
+  labels:
+    app: my-web
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine
+      command: ["sh", "-c", "env | sort | grep '^APP_' ; sleep 3600"]
+
+      # Вариант 1: подставить все ключи ConfigMap сразу.
+      envFrom:
+        - configMapRef:
+            name: app-config
+
+      # Вариант 2 (закомментирован): взять один конкретный ключ и, при
+      # необходимости, назвать переменную по-своему. Так делают, когда
+      # имя переменной в приложении отличается от ключа в ConfigMap.
+      #
+      # env:
+      #   - name: ENVIRONMENT
+      #     valueFrom:
+      #       configMapKeyRef:
+      #         name: app-config
+      #         key: APP_ENV
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi

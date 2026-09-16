@@ -1,0 +1,20 @@
+# Практика 13, дополнительный раздел. Привязка прав к ГРУППЕ, а не
+# к отдельному пользователю.
+# Применение:  kubectl apply -f manifests/13_rbac/rolebinding-group.yaml
+#
+# Группа берётся из поля O сертификата: у нас оно задано как O=developers.
+# Выдать права группе удобнее: новый сотрудник получает доступ просто
+# потому, что его сертификат выпущен с той же группой.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developers-binding
+  namespace: default
+subjects:
+  - kind: Group
+    name: developers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: k8suser-reader
+  apiGroup: rbac.authorization.k8s.io

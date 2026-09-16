@@ -1,0 +1,22 @@
+# Практика 13. RoleBinding — связывает субъект (пользователя или группу)
+# с Role.
+# Применение:  kubectl apply -f manifests/13_rbac/rolebinding.yaml
+#
+# name: k8suser должен точно совпадать с CN в сертификате пользователя
+# (он был задан как -subj "/CN=k8suser/O=developers").
+#
+# Группа "developers" из поля O= тоже доступна в RBAC — можно сделать второй
+# RoleBinding с subjects: kind: Group, name: developers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k8suser-binding
+  namespace: default
+subjects:
+  - kind: User
+    name: k8suser
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: k8suser-reader
+  apiGroup: rbac.authorization.k8s.io

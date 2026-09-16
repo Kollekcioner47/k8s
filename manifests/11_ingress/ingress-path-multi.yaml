@@ -1,0 +1,40 @@
+# Практика Ingress (app_1_ingress). Маршрутизация по путям на разные сервисы.
+# Применение:  kubectl apply -f manifests/11_ingress/ingress-path-multi.yaml
+#
+# Аннотация nginx.ingress.kubernetes.io/rewrite-target здесь НЕ используется
+# намеренно: вместе с pathType: Prefix она требует capture-групп в path
+# и иначе ломает сопоставление — запрос /app1 был бы переписан в / и ушёл
+# в сервис как корневой.
+#
+# Правило с path: / добавлено, чтобы у остальных запросов тоже был backend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-path
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: web.local
+      http:
+        paths:
+          - path: /app1
+            pathType: Prefix
+            backend:
+              service:
+                name: web1
+                port:
+                  number: 80
+          - path: /app2
+            pathType: Prefix
+            backend:
+              service:
+                name: web2
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: main
+                port:
+                  number: 80

@@ -1,0 +1,36 @@
+# Практика 11. Пример 2: маршрутизация по пути.
+# Применение:  kubectl apply -f manifests/11_ingress/ingress-path.yaml
+#
+# В одном правиле пути не должны повторяться — двух одинаковых /app2 быть
+# не должно, иначе контроллер отклонит конфигурацию.
+#
+# Аннотация rewrite-target здесь НЕ используется намеренно: вместе с
+# pathType: Prefix она требует capture-групп в path, иначе ломает
+# сопоставление. Показывать её лучше отдельно, как отдельную тему.
+#
+# Оба пути ведут в один сервис — чтобы продемонстрировать саму маршрутизацию.
+# В реальности по разным путям направляют разные сервисы или версии приложения.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: path-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: local.ingress
+      http:
+        paths:
+          - path: /app1
+            pathType: Prefix
+            backend:
+              service:
+                name: web-service
+                port:
+                  number: 80
+          - path: /app2
+            pathType: Prefix
+            backend:
+              service:
+                name: web-service
+                port:
+                  number: 80

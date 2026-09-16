@@ -1,0 +1,92 @@
+# Практика 5, продолжение. Демонстрация NetworkPolicy: приложение.
+# Применение:  kubectl apply -f manifests/05_services/np-demo-app.yaml
+#
+# ЗАЧЕМ ЭТИ ДВА ПОДА
+#
+# Чтобы увидеть, как работает NetworkPolicy, нужны две стороны: тот, кому
+# закрывают доступ, и тот, кто пытается достучаться.
+#
+#   np-server — nginx, к нему будем закрывать доступ;
+#   np-client — контейнер с curl, из которого будем проверять связь.
+#
+# Сначала применяем ЭТОТ файл и убеждаемся, что связь есть. Потом
+# применяем networkpolicy.yaml и смотрим, как она пропадает. Такой порядок
+# важен: иначе непонятно, что именно сломало доступ — политика или
+# что-то другое.
+#
+# ВАЖНОЕ ТРЕБОВАНИЕ, БЕЗ КОТОРОГО НИЧЕГО НЕ ЗАРАБОТАЕТ
+#
+# NetworkPolicy — это только описание. Применяет его сетевой плагин (CNI).
+# Не все плагины это умеют:
+#
+#   ПОДДЕРЖИВАЮТ: Calico, Cilium, Weave Net, Antrea, Kube-router;
+#   НЕ ПОДДЕРЖИВАЕТ: Flannel.
+#
+# Это принципиальный момент. Если ваш кластер собран на Flannel (а именно
+# он описан в статье по установке кластера из модуля 1), политики будут
+# создаваться без единой ошибки — и не делать НИЧЕГО. Доступ останется
+# открытым, и вы решите, что неправильно написали манифест. На самом деле
+# нужно сменить CNI.
+#
+# Проверить, какой плагин стоит:
+#     kubectl get pods -n kube-system | grep -E 'calico|cilium|flannel|weave|antrea'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: np-server
+  labels:
+    app: np-server
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine
+      ports:
+        - name: http
+          containerPort: 80
+      readinessProbe:
+        httpGet:
+          path: /
+          port: http
+        initialDelaySeconds: 2
+        periodSeconds: 3
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: np-server
+spec:
+  selector:
+    app: np-server
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: np-client
+  labels:
+    app: np-client
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      # Держим контейнер запущенным, чтобы было куда заходить.
+      command: ["sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

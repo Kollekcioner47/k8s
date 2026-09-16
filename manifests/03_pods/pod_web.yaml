@@ -1,0 +1,15 @@
+# Практика 3. Pod с одним контейнером.
+# Применение:  kubectl apply -f manifests/03_pods/pod_web.yaml
+#
+# ВНИМАНИЕ: замените YOUR_DOCKERHUB_LOGIN на ваш логин на Docker Hub
+# (или на любое другое имя образа, доступное нодам кластера).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web
+spec:
+  containers:
+    - name: container-apache
+      image: YOUR_DOCKERHUB_LOGIN/k8sphp:version1
+      ports:
+        - containerPort: 80

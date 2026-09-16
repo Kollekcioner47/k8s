@@ -1,0 +1,39 @@
+# Практика 11. Тестовое приложение и Service для Ingress.
+# Применение:  kubectl apply -f manifests/11_ingress/deploy-ingress.yaml
+#
+# Образ hashicorp/http-echo отвечает заданным текстом на ЛЮБОЙ путь,
+# поэтому он удобен для проверки маршрутизации.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello, Ingress!"
+          ports:
+            - containerPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+spec:
+  selector:
+    app: web
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5678
+  type: ClusterIP

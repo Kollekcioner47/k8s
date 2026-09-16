@@ -1,0 +1,14 @@
+# Практика 6. StorageClass для локальных дисков нод.
+# Применение:  kubectl apply -f manifests/06_volumes/sc-local.yaml
+#
+# kubernetes.io/no-provisioner означает «динамического создания томов нет»:
+# PV для такого класса создаются вручную.
+# volumeBindingMode: WaitForFirstConsumer откладывает связывание PVC с PV
+# до момента, когда появится под — иначе планировщик не знает, на какой ноде
+# искать локальный диск.
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer

@@ -1,0 +1,99 @@
+# Практика 5, продолжение. NetworkPolicy: закрываем доступ.
+# Применение:  kubectl apply -f manifests/05_services/networkpolicy.yaml
+#
+# ВНИМАНИЕ: ПЕРЕД ПРИМЕНЕНИЕМ прочитайте о поддержке CNI в комментарии
+# к файлу np-demo-app.yaml. На Flannel эти политики не будут работать —
+# они создадутся, но ни на что не повлияют.
+#
+# Сначала примените np-demo-app.yaml и убедитесь, что связь ЕСТЬ:
+#
+#     kubectl apply -f manifests/05_services/np-demo-app.yaml
+#     kubectl exec np-client -- curl -s -m 3 http://np-server
+#
+# Должен вернуться HTML от nginx. Теперь применяем политики.
+#
+# КАК ЧИТАТЬ ЭТИ ДВЕ ПОЛИТИКИ
+#
+# Политика 1 (deny-all) выбирает поды np-server и объявляет, что входящий
+# трафик им запрещён. Пустой блок ingress при policyTypes: [Ingress]
+# означает «не разрешено ничего».
+#
+# Политика 2 (allow-client) выбирает те же поды и разрешает входящий
+# трафик от подов с меткой app: np-client.
+#
+# ГЛАВНОЕ ПОНЯТИЕ: политики не отменяют друг друга, а СКЛАДЫВАЮТСЯ.
+# Итоговое правило — объединение всех разрешений. Политика 2 не «перебивает»
+# политику 1, а добавляет к ней одно исключение. Поэтому схема
+# «одна политика запрещает всё, остальные разрешают нужное» — это
+# стандартный и самый понятный способ описания доступа.
+#
+# ВАЖНО РАЗЛИЧАТЬ ДВА НАПРАВЛЕНИЯ:
+#   Ingress — трафик, ВХОДЯЩИЙ в под;
+#   Egress  — трафик, ИСХОДЯЩИЙ из пода.
+# Политика с одним лишь Ingress никак не ограничивает исходящие соединения.
+# Если вы хотите ограничить и их, нужен второй блок с policyTypes: [Egress].
+---
+# Политика 1: запретить весь входящий трафик к np-server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-server-deny-all
+spec:
+  podSelector:
+    matchLabels:
+      app: np-server
+  policyTypes:
+    - Ingress
+  # Блок ingress не указан вовсе — это и означает «запрещено всё».
+---
+# Политика 2: разрешить входящий трафик к np-server только от np-client.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-server-allow-client
+spec:
+  podSelector:
+    matchLabels:
+      app: np-server
+  policyTypes:
+    - Ingress
+  ingress:
+    # from со списком означает логическое ИЛИ: разрешено каждое из условий.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: np-client
+      ports:
+        - protocol: TCP
+          port: 80
+---
+# Политика 3: разрешить подам в этом namespace обращаться к DNS.
+#
+# ЗАЧЕМ: если вы закроете исходящий трафик (Egress), приложения перестанут
+# разрешать имена — сломается вообще всё, включая обращения к Service.
+# Разрешение на DNS нужно выдавать первым делом, иначе будет очень
+# загадочное поведение: поды запущены, но «ничего не находит».
+#
+# Здесь политика применяется ко всем подам с меткой demo-networkpolicy,
+# чтобы случайно не задеть остальные поды в лабораторном namespace.
+# В реальности такую политику обычно вешают на весь namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-demo-allow-dns
+spec:
+  podSelector:
+    matchLabels:
+      demo-networkpolicy: "true"
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

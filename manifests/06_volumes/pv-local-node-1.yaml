@@ -1,0 +1,30 @@
+# Практика 6. Локальный PV на конкретной ноде.
+# Применение:  kubectl apply -f manifests/06_volumes/pv-local-node-1.yaml
+#
+# Перед применением создайте каталог ВРУЧНУЮ на ноде kub-node-1:
+#   sudo mkdir -p /mnt/local-storage
+#
+# nodeAffinity обязателен: локальный диск существует только на одной ноде,
+# поэтому под должен быть запланирован именно туда.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-local-node-1
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /mnt/local-storage
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - kub-node-1

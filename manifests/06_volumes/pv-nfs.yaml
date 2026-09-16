@@ -1,0 +1,31 @@
+# Практика 6. PersistentVolume на основе NFS.
+# Применение:  kubectl apply -f manifests/06_volumes/pv-nfs.yaml
+#
+# Замените NFS_SERVER_IP на IP вашего NFS-сервера.
+# Каталог /mnt/nfs должен существовать на NFS-сервере и быть экспортирован
+# в /etc/exports (например: /mnt/nfs *(rw,sync,no_subtree_check,no_root_squash)).
+#
+# На всех нодах кластера нужен пакет с NFS-клиентом:
+#   Debian/Ubuntu: apt-get install -y nfs-common
+#   RHEL/CentOS:   yum install -y nfs-utils
+# Пакета "portmap" в современных дистрибутивах нет — его заменил rpcbind,
+# и он ставится автоматически как зависимость nfs-common.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-nfs-share
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  # reclaimPolicy: что делать с PV, когда PVC удалён.
+  #   Retain — PV и данные остаются (том перейдёт в Released);
+  #   Delete — PV удаляется (для NFS-плагина не работает: провижнера нет).
+  # Политика Recycle удалена из Kubernetes и больше не поддерживается.
+  persistentVolumeReclaimPolicy: Retain
+  # Пустой класс — чтобы точно связаться с PVC, у которого тоже storageClassName: ""
+  storageClassName: ""
+  nfs:
+    server: NFS_SERVER_IP
+    path: /mnt/nfs

@@ -1,18 +1,35 @@
-Создадим папку проекта
-mkdir project
-cd project
+Практика 2. Сборка образа приложения и публикация в Docker Hub.
 
-Создадим файл для приложения 
+ВАЖНО ПРО ИМЯ ОБРАЗА. Оно должно быть одинаковым во всём курсе.
+Договоримся использовать имя вида:
+    YOUR_DOCKERHUB_LOGIN/k8sphp:VERSION
+где YOUR_DOCKERHUB_LOGIN — ваш логин на Docker Hub.
+
+Запомните свой логин и подставляйте его везде:
+export DOCKERHUB_LOGIN=YOUR_DOCKERHUB_LOGIN
+
+
+=========================================================================
+1. Создаём папку проекта и файл приложения
+=========================================================================
+
+mkdir -p ~/project
+cd ~/project
+
 vim index.php
 
 <?php
 $ip_server = $_SERVER['SERVER_ADDR'];
-echo  "<h1> This WebPage was created by Kubernetes and Docker<h1><br>";
+echo  "<h1>This WebPage was created by Kubernetes and Docker</h1><br>";
 echo "Server IP Address is $ip_server", "<br><p>";
 echo "Made by <font color=blue>Ivan Ivanov";
 ?>
 
-Создаём Dockerfile
+
+=========================================================================
+2. Создаём Dockerfile
+=========================================================================
+
 vim Dockerfile
 
 FROM php:8.1-apache
@@ -20,12 +37,75 @@ COPY . /var/www/html/
 WORKDIR /var/www/html/
 EXPOSE 80
 
-собираем образ
-docker build -t myk8sapp .
-создаём репозиторий на docker.com
-переименуем наш проект 
-docker tag myk8sphp:latest %youreponame%/k8sphp:latest
-логинимся из коноли
-docker login
-отправляем образ в репозиторий
-docker push %youreponame%/k8sphp:latest
+Что делает каждая строка:
+  FROM    — базовый образ: PHP 8.1 вместе с веб-сервером Apache;
+  COPY    — копируем содержимое текущего каталога в каталог веб-сервера;
+  WORKDIR — рабочий каталог внутри образа;
+  EXPOSE  — только документация о том, что приложение слушает порт 80.
+            Сам порт никуда не публикуется, это делает Service.
+
+
+=========================================================================
+3. Собираем образ
+=========================================================================
+
+docker build -t $DOCKERHUB_LOGIN/k8sphp:version1 .
+
+Проверяем, что образ появился:
+docker images | grep k8sphp
+
+
+Совет: добавьте .dockerignore, чтобы в образ не попали лишние файлы:
+vim .dockerignore
+.git
+*.md
+Dockerfile
+
+
+=========================================================================
+4. Публикуем образ в Docker Hub
+=========================================================================
+
+Логинимся из консоли:
+docker login -u $DOCKERHUB_LOGIN
+
+Отправляем образ:
+docker push $DOCKERHUB_LOGIN/k8sphp:version1
+
+Проверяем, что образ ушёл:
+docker pull $DOCKERHUB_LOGIN/k8sphp:version1
+
+
+=========================================================================
+5. Собираем вторую версию образа — она нужна в практике 4
+=========================================================================
+
+Измените текст в index.php, например добавьте строку «Version 2».
+
+docker build -t $DOCKERHUB_LOGIN/k8sphp:version2 .
+docker push $DOCKERHUB_LOGIN/k8sphp:version2
+
+Эти две версии будут использоваться для демонстрации обновления
+и отката Deployment.
+
+
+=========================================================================
+ДОПОЛНИТЕЛЬНО: если узел кластера без интернета
+=========================================================================
+
+Если Docker Hub недоступен из кластера, образ можно перенести вручную.
+На машине, где собрали образ, сохраняем его в файл:
+docker save $DOCKERHUB_LOGIN/k8sphp:version1 -o k8sphp-v1.tar
+
+Копируем файл на каждую ноду и импортируем в containerd. Docker и
+containerd хранят образы в разных пространствах имён, поэтому образ,
+собранный через docker, containerd сам не увидит — импорт обязателен:
+sudo ctr -n k8s.io images import k8sphp-v1.tar
+
+Проверяем на ноде:
+sudo ctr -n k8s.io images ls | grep k8sphp
+
+В этом случае в манифестах укажите имя без префикса и запретите
+скачивание из сети:
+    image: k8sphp:version1
+    imagePullPolicy: Never

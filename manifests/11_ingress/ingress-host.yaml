@@ -1,0 +1,69 @@
+# Практика Ingress (app_1_ingress). Маршрутизация по именам хостов.
+# Применение:  kubectl apply -f manifests/11_ingress/ingress-host.yaml
+#
+# Сервисы main, web1, web2, web3, tomcat создаются командой kubectl expose.
+#
+# Для проверки имена хостов нужно прописать в /etc/hosts (см. практику),
+# а порт контроллера пробросить:
+#   kubectl port-forward svc/ingress-nginx-controller -n ingress-nginx 8080:80
+#
+# Ключевое: Ingress маршрутизирует по заголовку Host. Обращение к
+# http://127.0.0.1:8080 вернёт 404, потому что имя хоста не совпадёт
+# ни с одним правилом.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-host
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: main.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: main
+                port:
+                  number: 80
+    - host: web1.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web1
+                port:
+                  number: 80
+    - host: web2.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web2
+                port:
+                  number: 80
+    - host: web3.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web3
+                port:
+                  number: 80
+    - host: tomcat.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tomcat
+                port:
+                  number: 8080

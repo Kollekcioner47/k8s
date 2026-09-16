@@ -1,0 +1,27 @@
+Чарт {{ .Chart.Name }} версии {{ .Chart.Version }} установлен как релиз {{ .Release.Name }}.
+
+Что развёрнуто:
+  Реплик:  {{ .Values.replicaCount }}
+  Образ:   {{ .Values.container.image }}
+  Сервис:  {{ include "k8sphp.fullname" . }} ({{ .Values.service.type }})
+
+Проверить состояние:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl rollout status deployment/{{ include "k8sphp.fullname" . }}
+
+{{- if eq .Values.service.type "ClusterIP" }}
+
+Сервис имеет тип ClusterIP, то есть доступен только внутри кластера.
+Чтобы открыть его снаружи, пробросьте порт:
+  kubectl port-forward svc/{{ include "k8sphp.fullname" . }} 8080:{{ .Values.service.port }}
+Затем откройте в браузере http://127.0.0.1:8080
+{{- end }}
+
+{{- if .Values.ingressEnabled }}
+
+Ingress включён. Проверить адрес:
+  kubectl get ingress {{ include "k8sphp.fullname" . }}
+{{- end }}
+
+Удалить релиз:
+  helm uninstall {{ .Release.Name }}
