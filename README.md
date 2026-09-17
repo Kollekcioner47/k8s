@@ -186,20 +186,15 @@ OOMKilled
 ├── app_4_RBAC.txt             # Практика 11
 │
 ├── manifests/                 # Готовые к применению манифесты
-│   ├── 03_pods/               # К практике 3
-│   ├── 04_deploy/             # К практике 4
-│   ├── 05_services/           # К практике 5
-│   ├── 06_volumes/            # К практике 6
-│   ├── 07_secrets/            # К практике 7
-│   ├── app_1_gateway_api/     # К практике 8
-│   ├── app_2_helmcharts/      # Helm-чарт k8sphp
-│   ├── app_3_prometheus/      # К практике 10
-│   └── app_4_rbac/            # К практике 11
-│
-└── tools/                     # Вспомогательные скрипты
-    ├── validate_manifests.py  # Проверка манифестов
-    ├── make_slides.py         # Сборка презентаций по шаблону
-    └── check_slides.ps1       # Проверка презентаций
+   ├── 03_pods/               # К практике 3
+   ├── 04_deploy/             # К практике 4
+   ├── 05_services/           # К практике 5
+   ├── 06_volumes/            # К практике 6
+   ├── 07_secrets/            # К практике 7
+   ├── app_1_gateway_api/     # К практике 8
+   ├── app_2_helmcharts/      # Helm-чарт k8sphp
+   ├── app_3_prometheus/      # К практике 10
+   └── app_4_rbac/            # К практике 11
 ```
 
 Все манифесты в `manifests/` снабжены комментариями:
