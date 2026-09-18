@@ -1,0 +1,837 @@
+Практика 8. Gateway API: доступ к приложениям извне.
+
+Готовые манифесты к этой практике лежат в manifests/app_1_gateway_api/.
+
+ЗАЧЕМ ЭТА ПРАКТИКА ЗАМЕНИЛА INGRESS
+
+Раньше эту тему закрывал Ingress. Он окончательно устарел, и вот почему:
+
+  * маршрутизация упиралась в хост и путь. Всё остальное — по заголовкам,
+    по методу, по параметрам, по весам — требовало аннотаций;
+  * аннотации НЕ были частью стандарта. Каждый контроллер вводил свои,
+    и один и тот же манифест работал только с одним из них. Переход
+    с NGINX на Traefik означал переписывание всех аннотаций;
+  * в одном объекте смешивались задачи разных людей: платформенная команда
+    настраивала порты и TLS, команда приложения — правила путей. Разделить
+    права было нельзя;
+  * Ingress умел только HTTP. Для TCP, UDP и gRPC требовались отдельные
+    механизмы.
+
+Gateway API решает это: маршрутизация описана стандартными полями,
+разделена между тремя объектами с разными владельцами и поддерживает
+не только HTTP, но и TCP, UDP, gRPC, а также TLS всех видов.
+
+ЧТО НАДО ЗНАТЬ ПРО ЗРЕЛОСТЬ: Gateway API вышел в GA, актуальная версия
+API — v1, её мы и используем. Это уже не эксперимент: NGINX Gateway Fabric,
+Envoy Gateway, Istio, Cilium и Контур (в российском контуре) реализуют его.
+
+ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ ПРО КОНТРОЛЛЕР, И ЭТО ГЛАВНАЯ ОШИБКА НОВИЧКА
+
+Gateway API — это набор описаний (CRD). Сам по себе он ничего не делает.
+Трафик пускает отдельный контроллер, и его нужно установить ЯВНО.
+
+Если этого не сделать, происходит следующее: объекты Gateway и HTTPRoute
+создаются без единой ошибки, но Gateway навсегда остаётся без адреса
+со статусом Accepted: False, а маршруты игнорируются. Никаких сообщений
+об ошибке вы не увидите — просто ничего не работает.
+
+И ещё: ingress-nginx, который многие знают, Gateway API НЕ реализует.
+Это другое изделие. Для gatewayClassName: nginx нужен NGINX Gateway
+Fabric — проект F5/NGINX. Не путайте их, хотя оба называются «nginx».
+
+
+#########################################################################
+ЧАСТЬ 1. БАЗОВАЯ ПРАКТИКА
+#########################################################################
+
+
+=========================================================================
+1. Устанавливаем CRD Gateway API
+=========================================================================
+
+Сначала ставим сами описания. Без них контроллеру нечего обслуживать.
+
+Рекомендуется ставить CRD, привязанные к версии контроллера, — тогда
+схемы гарантированно совпадут. Для NGINX Gateway Fabric это делается так
+(версию проверьте на странице релизов проекта, здесь указана актуальная
+на момент написания):
+
+kubectl kustomize "https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/standard?ref=v2.5.1" | kubectl apply -f -
+
+ЗАЧЕМ ИМЕННО kustomize, А НЕ apply: файл с CRD собирается из нескольких
+источников, и kustomize подставляет их все. Прямая ссылка на один YAML
+даст только часть описаний.
+
+Проверяем, что CRD появились:
+kubectl get crd | grep gateway.networking.k8s.io
+
+Должны быть как минимум:
+  gatewayclasses.gateway.networking.k8s.io
+  gateways.gateway.networking.k8s.io
+  httproutes.gateway.networking.k8s.io
+
+
+=========================================================================
+2. Устанавливаем контроллер Gateway
+=========================================================================
+
+Это тот шаг, без которого ничего не заработает. Ставим NGINX Gateway
+Fabric через Helm:
+
+helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
+  --create-namespace \
+  -n nginx-gateway \
+  --set nginx.service.type=NodePort
+
+Обратите внимание на oci:// в начале — чарт лежит в реестре контейнеров,
+а не в классическом репозитории Helm. Мы разбирали такой способ публикации
+в практике Helm.
+
+Флаг nginx.service.type=NodePort нужен на bare-metal: тип LoadBalancer
+без MetalLB остался бы в состоянии pending, и до контроллера нельзя было
+бы достучаться.
+
+Ждём, пока контроллер запустится:
+kubectl rollout status deployment/ngf-nginx-gateway-fabric -n nginx-gateway
+kubectl get pods -n nginx-gateway
+
+Проверяем, что контроллер объявил GatewayClass и класс принят:
+kubectl get gatewayclass
+
+Ожидаемый вывод:
+NAME    CONTROLLER                                   ACCEPTED   AGE
+nginx   gateway.nginx.org/nginx-gateway-controller   True       30s
+
+Колонка ACCEPTED должна быть True. Если стоит False или Unknown —
+контроллер не работает, смотрите его логи:
+kubectl logs -n nginx-gateway deploy/ngf-nginx-gateway-fabric
+
+ЗАЧЕМ ЭТА ПРОВЕРКА: GatewayClass — это «паспорт» контроллера. Пока класса
+нет или он не принят, ни один Gateway в кластере не заработает. Проверять
+его нужно ДО создания Gateway, иначе будете искать причину не там.
+
+
+=========================================================================
+3. Создаём приложение и сервис
+=========================================================================
+
+# === файл: deploy-gateway.yaml ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: echo
+  template:
+    metadata:
+      labels:
+        app: echo
+    spec:
+      containers:
+        - name: echo
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello, Gateway!"
+          ports:
+            - containerPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo-service
+spec:
+  selector:
+    app: echo
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5678
+  type: ClusterIP
+# === конец файла ===
+
+Применяем:
+kubectl apply -f manifests/app_1_gateway_api/deploy-gateway.yaml
+kubectl get svc
+kubectl get pods
+
+Образ hashicorp/http-echo возвращает заданный текст на любой путь —
+удобно для проверки маршрутизации: сразу видно, что запрос дошёл
+и куда именно.
+
+Обратите внимание, что Service здесь обычный ClusterIP. Наружу его
+выставляет не он, а Gateway — в этом и смысл: точка входа одна,
+а сервисов за ней может быть много.
+
+
+=========================================================================
+4. Создаём Gateway
+=========================================================================
+
+# === файл: gateway.yaml ===
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: echo-gateway
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: gateway.local
+      allowedRoutes:
+        namespaces:
+          from: Same
+# === конец файла ===
+
+РАЗБЕРЁМ ПОЛЯ, потому что устройство здесь непривычное:
+
+  gatewayClassName — какая реализация обслуживает шлюз. Значение nginx
+    соответствует GatewayClass, который создал контроллер на шаге 2.
+    Если написать здесь имя класса, которого нет, Gateway останется
+    без адреса;
+
+  listeners — точка входа: какие порты и протоколы слушать. Их может быть
+    несколько, в том числе с разными протоколами. Именно здесь, а не
+    в маршрутах, описывается TLS;
+
+  hostname — ограничивает слушатель одним именем хоста. Если убрать,
+    листенер будет принимать любые;
+
+  allowedRoutes.namespaces.from: Same — какие маршруты к шлюзу
+    допускаются. Same разрешает только HTTPRoute из того же namespace,
+    и это разумное значение по умолчанию. Про другие варианты и про
+    ReferenceGrant — в разделе 10 части 2.
+
+Применяем и проверяем:
+kubectl apply -f manifests/app_1_gateway_api/gateway.yaml
+kubectl get gateway
+
+В выводе должны быть PROGRAMMED: True и адрес. Если адреса нет — смотрим
+условия:
+kubectl describe gateway echo-gateway
+
+ЗАЧЕМ СМОТРЕТЬ УСЛОВИЯ: Gateway API возвращает подробные статусы. В разделе
+Status у каждого объекта есть conditions, и по ним всегда понятно, что
+именно не сложилось: класс не принят, листенер конфликтует, маршрут
+не разрешён. Это гораздо информативнее, чем события у Ingress.
+
+
+=========================================================================
+5. Создаём HTTPRoute и проверяем работу
+=========================================================================
+
+# === файл: httproute.yaml ===
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-route
+spec:
+  parentRefs:
+    - name: echo-gateway
+  hostnames:
+    - gateway.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: echo-service
+          port: 80
+# === конец файла ===
+
+Читается буквально: «любой путь, начинающийся с /, направить в сервис
+echo-service на порт 80».
+
+  parentRefs — к какому шлюзу привязан маршрут. Ссылка по имени;
+  hostnames — для каких имён хостов действует правило;
+  rules — список правил. Внутри: matches (что совпадает) и backendRefs
+    (куда направлять).
+
+Применяем:
+kubectl apply -f manifests/app_1_gateway_api/httproute.yaml
+kubectl get httproute
+
+Проверяем, что маршрут принят шлюзом:
+kubectl describe httproute echo-route
+
+В разделе Status должно быть Accepted: True и ResolvedRefs: True.
+Если Accepted: False — маршрут не привязался к Gateway. Частые причины:
+не совпал hostname, не разрешено allowedRoutes, или имя шлюза
+в parentRefs указано с опечаткой.
+
+НАСТРАИВАЕМ ФАЙЛ HOSTS. Маршрутизация идёт по заголовку Host, поэтому
+имя gateway.local должно куда-то резолвиться:
+
+sudo nano /etc/hosts
+127.0.0.1 gateway.local
+
+ПРОБРАСЫВАЕМ ПОРТ КОНТРОЛЛЕРА. Это принципиальный момент: пробрасывать
+нужно КОНТРОЛЛЕР, а не сервис приложения. Если пробросить echo-service,
+запрос пойдёт напрямую в под, минуя Gateway, и вы проверите не то.
+
+kubectl port-forward -n nginx-gateway svc/ngf-nginx-gateway-fabric 8080:80
+
+Проверяем:
+curl http://gateway.local:8080
+
+Ожидаемый ответ: Hello, Gateway!
+
+Теперь проверим, что решение о маршрутизации принимает именно Gateway.
+Обратимся по адресу без совпадающего хоста:
+curl http://127.0.0.1:8080
+# 404 — имя хоста не совпало ни с одним маршрутом
+
+Вот это и доказывает, что работает Gateway, а не прямое обращение к поду.
+
+
+=========================================================================
+6. HTTPS с самоподписанным сертификатом
+=========================================================================
+
+1. Создаём самоподписанный сертификат:
+
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=gateway.local/O=gateway.local"
+
+Что означают флаги:
+  -x509 — самоподписанный сертификат X.509;
+  -nodes — ключ без пароля;
+  -days 365 — срок действия;
+  -newkey rsa:2048 — новый ключ RSA 2048 бит;
+  -subj — субъект сертификата, CN — имя хоста, для которого он выдан.
+
+2. Создаём Secret с сертификатом:
+
+kubectl create secret tls gateway-tls --cert=tls.crt --key=tls.key
+
+Secret обязательно должен лежать в том же namespace, что и Gateway.
+
+3. Создаём Gateway с TLS-листенером и маршрут к нему.
+
+ОБРАТИТЕ ВНИМАНИЕ НА ЭТУ ОШИБКУ: легко добавить Gateway с TLS, но забыть
+про маршрут — старый HTTPRoute привязан к прежнему шлюзу по имени, и новый
+TLS-шлюз останется без правил. Поэтому сначала удаляем прежние объекты,
+иначе получим два шлюза, претендующих на одни порты:
+
+kubectl delete -f manifests/app_1_gateway_api/httproute.yaml
+kubectl delete -f manifests/app_1_gateway_api/gateway.yaml
+
+# === файл: gateway-https.yaml ===
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: echo-gateway-https
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: gateway.local
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: gateway-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-route-https
+spec:
+  parentRefs:
+    - name: echo-gateway-https
+  hostnames:
+    - gateway.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: echo-service
+          port: 80
+# === конец файла ===
+
+mode: Terminate означает, что TLS завершается на Gateway, а дальше до пода
+трафик идёт по HTTP внутри кластера. Бывает ещё Passthrough — когда
+шифрование не снимается, и сертификат живёт в самом приложении.
+
+4. Применяем и проверяем:
+
+kubectl apply -f manifests/app_1_gateway_api/gateway-https.yaml
+kubectl get gateway
+
+Пробрасываем порт 443 контроллера. Нужен ОТДЕЛЬНЫЙ проброс — на 8080
+TLS нет:
+
+kubectl port-forward -n nginx-gateway svc/ngf-nginx-gateway-fabric 8443:443
+
+curl -k https://gateway.local:8443
+
+Флаг -k отключает проверку сертификата: он самоподписанный, проверка
+не пройдёт. В продакшене сертификаты выдают через cert-manager или
+от внешнего удостоверяющего центра — вручную их не обновляют.
+
+
+#########################################################################
+ЧАСТЬ 2. ПРОДОЛЖЕНИЕ: ВОЗМОЖНОСТИ, КОТОРЫХ НЕ БЫЛО В INGRESS
+#########################################################################
+
+
+=========================================================================
+7. Три объекта и разделение ответственности
+=========================================================================
+
+ЗАЧЕМ ТАКОЕ УСЛОЖНЕНИЕ: три объекта вместо одного — это не случайность,
+а главная идея Gateway API. Разберём, кому какой объект принадлежит.
+
+  GatewayClass — «какая реализация работает в кластере». Настраивает
+    администратор кластера один раз. Обычно создаётся самим контроллером,
+    трогать его не нужно.
+
+  Gateway — «точка входа»: порты, протоколы, TLS, какие namespace
+    могут подключать маршруты. Владелец — платформенная команда.
+    Она отвечает за то, чтобы снаружи всё было доступно и защищено.
+
+  HTTPRoute — «правила маршрутизации»: какие пути и хосты куда ведут.
+    Владелец — команда приложения. Она отвечает за своё приложение
+    и не лезет в настройки TLS.
+
+ПОЧЕМУ ЭТО ВАЖНО НА ПРАКТИКЕ — представьте кластер, где работает двадцать
+команд. В Ingress все они правили один объект: чтобы добавить путь, надо
+было получить права на весь Ingress, а значит — возможность случайно
+сломать маршруты соседей. С Gateway API команда получает права только
+на свои HTTPRoute в своём namespace, а Gateway остаётся у платформы.
+
+ПРОВЕРИМ РАЗДЕЛЕНИЕ ПРАВАМИ. Посмотрим, что видно из namespace приложения:
+kubectl get gateway -A
+kubectl get httproute
+
+Обратите внимание: Gateway лежит в namespace ingress-nginx (или nginx-gateway),
+а HTTPRoute — в вашем. Это и есть разделение.
+
+СВЯЗЬ МЕЖДУ ОБЪЕКТАМИ — через ИМЕНА, а не через метки. В Ingress контроллер
+находил объекты по ingressClassName, здесь — по имени в parentRefs.
+Поэтому переименование Gateway ломает все маршруты, которые на него
+ссылались. Это стоит помнить при рефакторинге.
+
+
+=========================================================================
+8. Сопоставление запросов: не только хост и путь
+=========================================================================
+
+ЗАЧЕМ: в Ingress маршрутизация упиралась в хост и путь. Всё остальное
+требовало аннотаций, своих для каждого контроллера. В Gateway API это
+часть стандарта, и один манифест работает с любым контроллером.
+
+Поддерживается сопоставление по:
+  path         — путь (PathPrefix, Exact, RegularExpression);
+  headers      — заголовки;
+  queryParams  — параметры строки запроса;
+  method       — HTTP-метод.
+
+# === файл: httproute-matching.yaml (фрагмент) ===
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-matching
+spec:
+  parentRefs:
+    - name: echo-gateway
+  hostnames:
+    - gateway.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+          method: POST
+      backendRefs:
+        - name: echo-service
+          port: 80
+    - matches:
+        - headers:
+            - name: X-Version
+              value: beta
+      backendRefs:
+        - name: echo-service
+          port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: echo-service
+          port: 80
+# === конец файла ===
+
+Полный манифест — в manifests/app_1_gateway_api/httproute-matching.yaml.
+
+ПРАВИЛО ПОРЯДКА, КОТОРОЕ НАДО ЗАПОМНИТЬ ТВЁРДО: правила проверяются
+СВЕРХУ ВНИЗ, срабатывает ПЕРВОЕ подошедшее. Поэтому конкретные условия
+идут выше общих. Если поставить общее «путь /» первым, до остальных
+дело не дойдёт никогда — и вы будете долго не понимать, почему маршрут
+по заголовку не срабатывает.
+
+ЗАЧЕМ СОПОСТАВЛЕНИЕ ПО ЗАГОЛОВКУ — очень практичная вещь: так тестируют
+новую версию на себе. Вы или коллеги добавляете заголовок X-Version: beta
+через расширение браузера или curl и попадаете на бету, а остальные
+пользователи видят стабильную версию. Отдельный стенд для этого не нужен.
+
+Проверяем на практике (после применения deploy-gateway.yaml и gateway.yaml):
+kubectl apply -f manifests/app_1_gateway_api/httproute-matching.yaml
+
+curl -s http://gateway.local:8080/                    # общее правило
+curl -s -X POST http://gateway.local:8080/api         # совпадёт с правилом 1
+curl -s -H "X-Version: beta" http://gateway.local:8080/   # совпадёт с правилом 2
+
+МЕЛОЧЬ ПРО queryParams, НА КОТОРОЙ СПОТЫКАЮТСЯ: по умолчанию тип
+сопоставления для параметров — RegularExpression, а не Exact. То есть
+значение трактуется как регулярное выражение, и debug=true совпадёт
+и с debug=truex. Для простых случаев указывайте type: Exact явно.
+
+
+=========================================================================
+9. Канарейка по весам: точное управление долей трафика
+=========================================================================
+
+ЗАЧЕМ: в практике Deployment мы делали канарейку через количество реплик —
+4 старых и 1 новый давали примерно 20%. Пропорция получалась грубой,
+и управлять ей точно было нельзя. Здесь это делается явно и точно.
+
+# === файл: httproute-canary.yaml (фрагмент) ===
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-canary-route
+spec:
+  parentRefs:
+    - name: echo-gateway
+  hostnames:
+    - gateway.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: echo-stable
+          port: 80
+          weight: 9
+        - name: echo-canary
+          port: 80
+          weight: 1
+# === конец файла ===
+
+Полный манифест с двумя развёртываниями — в
+manifests/app_1_gateway_api/httproute-canary.yaml.
+
+Веса относительные: 9 и 1 означают 90% и 10%. Сумма может быть любой,
+важно соотношение — 90 и 10 эквивалентны 9 и 1.
+
+Применяем и проверяем своими руками:
+kubectl apply -f manifests/app_1_gateway_api/httproute-canary.yaml
+kubectl get pods -l app=echo-stable
+kubectl get pods -l app=echo-canary
+
+kubectl port-forward -n nginx-gateway svc/ngf-nginx-gateway-fabric 8080:80
+
+И во втором терминале — прогоняем много запросов:
+for i in $(seq 1 20); do curl -s http://gateway.local:8080; echo; done
+
+Примерно каждый десятый ответ будет CANARY v2. Обратите внимание, насколько
+это точнее, чем управление через реплики: доля задана числом и не зависит
+от того, сколько подов реально запущено.
+
+ЧЕГО ЭТОТ МЕХАНИЗМ НЕ ДЕЛАЕТ, и об этом важно сказать честно: готовность
+подов проверяется, а КАЧЕСТВО ответов — нет. Если новая версия отвечает
+ошибкой 500 на каждый запрос, Gateway об этом не узнает и продолжит
+отправлять на неё 10% трафика. Поэтому канарейку всегда сопровождают
+метриками и алертами: смотреть на долю ошибок у новой версии и откатывать
+руками. Автоматический откат по метрикам — это уже уровень service mesh
+или прогрессивного деплоя (Argo Rollouts, Flagger).
+
+ЕЩЁ ОДНА ПРАКТИЧНАЯ ДЕТАЛЬ: если один из сервисов в backendRefs недоступен
+(например, у canary нет готовых подов), трафик распределится между
+оставшимися. Для канарейки это именно то, что нужно: упавшая новая версия
+не уронит сервис целиком.
+
+
+=========================================================================
+10. Фильтры: перенаправление, перезапись, заголовки
+=========================================================================
+
+ЗАЧЕМ: в Ingress для этого были аннотации вида
+nginx.ingress.kubernetes.io/rewrite-target, и работали они только
+с конкретным контроллером. Здесь то же самое описано стандартными полями
+filters, и их обязан поддерживать любой контроллер Gateway API.
+
+Три фильтра, которые нужны чаще всего (полный манифест —
+manifests/app_1_gateway_api/httproute-filters.yaml):
+
+ПЕРЕНАПРАВЛЕНИЕ (RequestRedirect). Типовая задача: приложение раньше жило
+по пути /old, потом переехало. Пользователи ходят по старым ссылкам,
+и ломать их нельзя.
+
+    filters:
+      - type: RequestRedirect
+        requestRedirect:
+          path:
+            type: ReplaceFullPath
+            replaceFullPath: /new
+          statusCode: 302
+
+ПРО КОД ОТВЕТА: 301 — постоянный редирект, браузеры его кэшируют
+надолго, поэтому при переезде раздела лучше сначала 302 — временный.
+
+ПЕРЕЗАПИСЬ ПУТИ (URLRewrite). Задача: снаружи приложение доступно
+по /app, а внутри ожидает запросы на корне.
+
+    filters:
+      - type: URLRewrite
+        urlRewrite:
+          path:
+            type: ReplacePrefixMatch
+            replacePrefixMatch: /
+
+ЗДЕСЬ ТА САМАЯ ТОНКОСТЬ, из-за которой в Ingress постоянно ошибались:
+PathPrefix: /app совпадёт и с /app, и с /app/users, и с /application.
+Тип ReplacePrefixMatch снимает ровно совпавший префикс, а не всё подряд.
+
+ЗАГОЛОВКИ (RequestHeaderModifier). Зачем: за прокси приложение теряет
+исходные данные — IP клиента, исходный протокол. Заголовки это
+восстанавливают. Плюс можно убрать то, что клиент мог подделать:
+
+    filters:
+      - type: RequestHeaderModifier
+        requestHeaderModifier:
+          set:
+            - name: X-Environment
+              value: lab
+          remove:
+            - X-Internal-Request
+
+Set добавляет или перезаписывает, Add добавляет ещё одно значение,
+Remove удаляет. Именно Remove защищает от подделки служебных заголовков
+клиентом — без неё злоумышленник может прислать X-Internal-Request: true
+и притвориться внутренним сервисом.
+
+
+=========================================================================
+11. Маршруты между namespace: ReferenceGrant
+=========================================================================
+
+ЗАЧЕМ: это возможность, которой в Ingress не было вообще. В большом
+кластере хочется, чтобы платформенная команда держала точку входа,
+а команды приложений — свои правила. Но по умолчанию это запрещено,
+и запрещено сознательно.
+
+ПРЕДСТАВЬТЕ, ЧТО БЫЛО БЫ БЕЗ ЗАПРЕТА: любой HTTPRoute в любом namespace
+мог бы привязаться к общему Gateway и заявить чужой хост. Это готовая
+дыра: злоумышленник с правами на создание маршрута в своём namespace
+перехватывал бы трафик чужого приложения.
+
+Поэтому по умолчанию маршруты допускаются только из своего namespace
+(allowedRoutes.namespaces.from: Same). Чтобы разрешить чужие, нужно
+ЯВНОЕ разрешение от владельца ресурса.
+
+ReferenceGrant — это и есть такое разрешение. Ключевой принцип:
+разрешение выдаёт ВЛАДЕЛЕЦ ресурса, а не тот, кто хочет к нему
+подключиться.
+
+# === файл: referencegrant-cross-ns.yaml (фрагмент) ===
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-route-to-backend
+  namespace: team-backend
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: default
+  to:
+    - group: ""
+      kind: Service
+      name: backend-echo
+# === конец файла ===
+
+Читается так: «HTTPRoute с именем backend-route из namespace default
+разрешается ссылаться на сервис backend-echo в namespace team-backend».
+
+Обратите внимание, насколько формулировка узкая: указан конкретный
+namespace И конкретное имя сервиса. Можно было бы написать name: "*"
+и разрешить всем — но смысл механизма именно в точности.
+
+Полный пример со всеми объектами — в
+manifests/app_1_gateway_api/referencegrant-cross-ns.yaml. Там создаётся
+namespace, приложение в нём, разрешение и маршрут, который ссылается
+на сервис из другого namespace через поле namespace.
+
+Проверяем:
+kubectl apply -f manifests/app_1_gateway_api/referencegrant-cross-ns.yaml
+kubectl get referencegrant -n team-backend
+kubectl describe httproute backend-route
+
+Если разрешения нет или оно указано неточно, маршрут получит
+ResolvedRefs: False с причиной RefNotPermitted — и это самая понятная
+ошибка из возможных, потому что прямо говорит, чего не хватает.
+
+
+=========================================================================
+12. Отладка: почему не работает
+=========================================================================
+
+У Gateway API есть большое преимущество перед Ingress: он возвращает
+подробные статусы. Диагностика строится на них, а не на догадках.
+
+ШАГ 1. ПРОВЕРИТЬ КЛАСС
+
+kubectl get gatewayclass
+
+ACCEPTED должен быть True. Если False — контроллер не работает:
+kubectl logs -n nginx-gateway deploy/ngf-nginx-gateway-fabric
+
+Это первая проверка всегда. Пока класса нет, всё остальное бессмысленно.
+
+ШАГ 2. ПРОВЕРИТЬ GATEWAY
+
+kubectl get gateway
+kubectl describe gateway echo-gateway
+
+Смотрим conditions в разделе Status:
+  Accepted: False — несовместимая конфигурация: обычно неверный
+    gatewayClassName или конфликт листенеров (два слушают один порт);
+  Programmed: False — контроллер не смог настроить шлюз. Смотрите
+    причину в message.
+
+ШАГ 3. ПРОВЕРИТЬ МАРШРУТ
+
+kubectl get httproute
+kubectl describe httproute echo-route
+
+Conditions, которые надо знать:
+  Accepted: False — маршрут не привязался к Gateway. Причины: не совпал
+    hostname, не разрешено allowedRoutes, опечатка в имени шлюза;
+  ResolvedRefs: False — не удалось разрешить backendRefs. Причины:
+    сервиса нет, не тот порт, или сработал ReferenceGrant.
+
+В message всегда написано конкретно, чего не хватает. Это принципиально
+удобнее, чем события Ingress.
+
+ШАГ 4. ПРОВЕРИТЬ, ЧТО ПРОБРАСЫВАЕТЕ ИМЕННО КОНТРОЛЛЕР
+
+Самая частая ошибка проверки: пробросить сервис приложения и решить,
+что Gateway не работает.
+
+kubectl port-forward -n nginx-gateway svc/ngf-nginx-gateway-fabric 8080:80
+
+Именно контроллер, а не echo-service.
+
+ШАГ 5. ПРОВЕРИТЬ, ЧТО ХОСТ СОВПАДАЕТ
+
+curl -v http://gateway.local:8080
+
+Флаг -v покажет заголовок Host, который реально ушёл. Обращение
+по 127.0.0.1 даст 404 — и это правильное поведение, а не поломка:
+имя хоста не совпало ни с одним маршрутом.
+
+ШАГ 6. ПОСМОТРЕТЬ, ЧТО ПРОИСХОДИТ В КОНТРОЛЛЕРЕ
+
+kubectl logs -n nginx-gateway deploy/ngf-nginx-gateway-fabric --tail=50
+
+Здесь видно, как контроллер собирает конфигурацию и на что ругается.
+
+ТАБЛИЦА «СИМПТОМ — ПРИЧИНА», которую стоит держать под рукой:
+
+  Gateway без адреса, PROGRAMMED: False
+      → нет контроллера или GatewayClass не принят (шаг 1)
+
+  HTTPRoute Accepted: False
+      → не совпал hostname, allowedRoutes запрещает, опечатка в parentRefs
+
+  HTTPRoute ResolvedRefs: False
+      → сервиса нет или не разрешено ReferenceGrant
+
+  Всё Accepted: True, но 404 на запрос
+      → не совпадает Host (проверьте /etc/hosts) или путь не подходит
+        ни одному правилу
+
+  Всё Accepted: True, 503
+      → сервис найден, но готовых подов нет: смотрите readinessProbe
+
+  Ничего не помогло
+      → проверьте, что пробрасываете контроллер, а не сервис приложения
+
+
+=========================================================================
+13. Антипаттерны работы с Gateway API
+=========================================================================
+
+  * Забыть установить контроллер и искать ошибку в манифестах.
+    Объекты создаются без ошибок и молча ничего не делают. Всегда
+    начинайте с kubectl get gatewayclass.
+
+  * Проверять работу пробросом сервиса приложения вместо контроллера.
+    Так проверяется Service, а не маршрутизация.
+
+  * Ставить общее правило «путь /» выше конкретных. Из-за порядка
+    проверки остальные правила не сработают никогда.
+
+  * Использовать один Gateway на всё и разрешать маршруты из любых
+    namespace (from: All). Это возвращает нас к проблеме Ingress:
+    любая команда может заявить чужой хост.
+
+  * Выдавать ReferenceGrant с name: "*" «чтобы не мешало».
+    Механизм существует именно для точных разрешений.
+
+  * Ждать от весов канарейки автоматического отката. Веса управляют
+    распределением, но не качеством ответов. Нужны метрики и алерты.
+
+  * Менять Gateway «на лету», не проверив, какие маршруты на него
+    ссылаются. Связь по именам: переименование ломает всё разом.
+
+  * Держать TLS-сертификаты вручную. Срок действия закончится в самый
+    неподходящий момент — используйте cert-manager.
+
+  * Смешивать Gateway API и Ingress в одном кластере без необходимости.
+    Пока идут миграции это неизбежно, но два механизма с разной логикой
+    затрудняют диагностику: непонятно, кто из них обработал запрос.
+
+
+=========================================================================
+УБОРКА ПОСЛЕ ПРАКТИКИ
+=========================================================================
+
+kubectl delete -f manifests/app_1_gateway_api/referencegrant-cross-ns.yaml --ignore-not-found
+kubectl delete -f manifests/app_1_gateway_api/httproute-filters.yaml --ignore-not-found
+kubectl delete -f manifests/app_1_gateway_api/httproute-matching.yaml --ignore-not-found
+kubectl delete -f manifests/app_1_gateway_api/httproute-canary.yaml --ignore-not-found
+kubectl delete -f manifests/app_1_gateway_api/gateway-https.yaml --ignore-not-found
+kubectl delete -f manifests/app_1_gateway_api/httproute.yaml --ignore-not-found
+kubectl delete -f manifests/app_1_gateway_api/gateway.yaml --ignore-not-found
+kubectl delete -f manifests/app_1_gateway_api/deploy-gateway.yaml --ignore-not-found
+
+kubectl delete namespace team-backend --ignore-not-found
+kubectl delete secret gateway-tls --ignore-not-found
+rm -f tls.key tls.crt
+
+Контроллер и CRD убираем только если они больше не нужны:
+helm uninstall ngf -n nginx-gateway
+kubectl delete namespace nginx-gateway
+
+ВНИМАНИЕ: удаление CRD уничтожает ВСЕ объекты этих типов во всём
+кластере — все Gateway и HTTPRoute, включая чужие. На общем кластере
+так делать нельзя.
+kubectl delete crd gateways.gateway.networking.k8s.io httproutes.gateway.networking.k8s.io gatewayclasses.gateway.networking.k8s.io referencegrants.gateway.networking.k8s.io
+
+Проверяем, что не осталось висящих объектов:
+kubectl get gateway -A
+kubectl get httproute -A
